@@ -114,17 +114,19 @@ def chunk_list(list, batch_size):
 def render_row(prompts: list[str],
                seeds: list[int],
                repo_id_or_path: str,
-               device: str='cuda',
-               batch_size=1) -> list[Image]:
-    sample_w = 512
-    sample_h = 512
-    num_inference_steps = 2
+               device: str=None,
+               batch_size=1,
+               sample_w = 512,
+               sample_h = 512,
+               num_inference_steps = 15 # ddpm++ solver: 15 is typically enough
+               ) -> list[Image]:
 
     if os.path.isfile(repo_id_or_path):
         pipeline = load_pipeline_from_original_stable_diffusion_ckpt(repo_id_or_path)
     else:
         pipeline = StableDiffusionPipeline.from_pretrained(repo_id_or_path)
-    # ddpm++2m
+
+    # ddpm++
     pipeline.scheduler = DPMSolverMultistepScheduler.from_config(pipeline.scheduler.config,
                                                                  algorithm_type="dpmsolver++")
     if device is None:
