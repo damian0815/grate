@@ -140,7 +140,7 @@ def render_row(prompts: list[str],
         seeds = [item[1] for item in batch]
         progress_bar.set_description(f"{prompts}")
         #print(f" - {prompts}")
-        generator_device = 'cpu' if device is 'mps' else device
+        generator_device = 'cpu' if device == 'mps' else device
         manual_seed_generators = [torch.Generator(generator_device).manual_seed(seed) for seed in seeds]
         pipeline_output: StableDiffusionPipelineOutput = pipeline(prompts,
                                                                   generator=manual_seed_generators,
