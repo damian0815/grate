@@ -24,7 +24,7 @@ python3 grate.py
 Run `python3 grate.py -h` for help:
 
 ```commandline
-python3 grate.py -h
+$ python3 grate.py -h
 usage: grate [-h] --prompts PROMPTS [PROMPTS ...] --repo_ids_or_paths REPO_IDS_OR_PATHS [REPO_IDS_OR_PATHS ...] --output_path OUTPUT_PATH
              [--device DEVICE]
 
