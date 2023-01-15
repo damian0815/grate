@@ -4,12 +4,12 @@ Make a matrix of images by running the same prompt through multiple Stable Diffu
 
 ![Demo output of a grid of prompts rendered with htree different stable diffusion models](grate-demo.png)
 
-Supports huggingface repo ids, local CompVis-style `.ckpt` files, and paths to local folder hierarchies containing diffusers-format models. 
+Supports huggingface repo ids, local CompVis-style `.ckpt` files, and paths to local folder hierarchies containing diffusers-format models. Currently using DDPM++2 sampler at 15 steps.
 
 The above image was rendered using the following commandline on an empty runpod instance:
 
 ```commandline
-python3 grate.py 
+python3 grate.py \
     --prompts \
         "a cat playing with a ball in the forest" \
         "a dog chasing a postman" \
@@ -24,7 +24,7 @@ python3 grate.py
 Run `python3 grate.py -h` for help:
 
 ```commandline
-$ python3 grate.py -h
+$ python3 grate.py -h 
 usage: grate [-h] --prompts PROMPTS [PROMPTS ...] --repo_ids_or_paths REPO_IDS_OR_PATHS [REPO_IDS_OR_PATHS ...] --output_path OUTPUT_PATH
              [--device DEVICE]
 
@@ -43,3 +43,4 @@ options:
 ```
 
 Enjoy!
+
