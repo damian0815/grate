@@ -17,7 +17,7 @@ python3 grate.py
     --repo_ids_or_paths \
         "stabilityai/stable-diffusion-2-1" \
         "runwayml/stable-diffusion-v1-5" \
-        "nitrosocke/Arcane-Diffusion" 
+        "nitrosocke/Arcane-Diffusion" \
     --output_path ./grate-demo.png
 ```
 
