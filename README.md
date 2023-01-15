@@ -21,3 +21,25 @@ python3 grate.py
     --output_path ./grate-demo.png
 ```
 
+Run `python3 grate.py -h` for help:
+
+```commandline
+python3 grate.py -h
+usage: grate [-h] --prompts PROMPTS [PROMPTS ...] --repo_ids_or_paths REPO_IDS_OR_PATHS [REPO_IDS_OR_PATHS ...] --output_path OUTPUT_PATH
+             [--device DEVICE]
+
+Generates a grid of images by running a set of prompts through different Stable Diffusion models.
+
+options:
+  -h, --help            show this help message and exit
+  --prompts PROMPTS [PROMPTS ...]
+                        prompts to render, as strings enclosed in "" and separated by spaces. eg --prompts "a cat" "a dog" "a fish"
+  --repo_ids_or_paths REPO_IDS_OR_PATHS [REPO_IDS_OR_PATHS ...]
+                        repository ids or paths to models in diffusers or ckpt format, as strings enclosed in "" and separated by spaces.
+                        eg --repo_ids_or_paths "stablityai/stable-diffusion-2-1" "../models/v1-5-pruned-emaonly.ckpt"
+  --output_path OUTPUT_PATH
+                        where to save the resulting image
+  --device DEVICE       device to use, eg 'cuda', 'mps', 'cpu'. if omitted, will try to pick the best device.
+```
+
+Enjoy!
