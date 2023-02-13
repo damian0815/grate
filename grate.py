@@ -6,6 +6,7 @@ import torch
 from diffusers import StableDiffusionPipeline, DPMSolverMultistepScheduler
 from PIL import Image, ImageDraw, ImageFont
 from diffusers.pipelines.stable_diffusion import StableDiffusionPipelineOutput
+from diffusers.utils import is_xformers_available
 from tqdm import tqdm
 
 from convert_original_stable_diffusion_to_diffusers import load_pipeline_from_original_stable_diffusion_ckpt
@@ -131,6 +132,10 @@ def render_row(prompts: list[str],
                                                                  algorithm_type="dpmsolver++")
     if device is None:
         device = 'cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu'
+    if device == 'cuda':
+        pipeline = pipeline.to(torch.float16)
+        if is_xformers_available():
+            pipeline.enable_xformers_memory_efficient_attention()
     pipeline = pipeline.to(device)
     images = []
     batches = chunk_list(list(zip(prompts,seeds)), batch_size)
