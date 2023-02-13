@@ -196,9 +196,11 @@ if __name__ == '__main__':
     parser.add_argument("--width",
                         required=False,
                         default=512,
+                        type=int,
                         help="individual image width")
-    parser.add_argument("--width",
+    parser.add_argument("--height",
                         required=False,
+                        type=int,
                         default=512,
                         help="individual image height")
     args = parser.parse_args()
