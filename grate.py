@@ -43,17 +43,6 @@ def get_wrapped_text(text: str, font: ImageFont.ImageFont,
         lines.append(current_line)
     return lines
 
-    lines = ['']
-    for word in text.split():
-
-        line = f'{lines[-1]} {word}'.strip()
-        if font.getlength(line) <= line_length:
-            lines[-1] = line
-        else:
-            lines.append(word)
-    return '\n'.join(lines)
-
-
 def make_label_image(label: str, font: ImageFont, width: int, height: int, margins=None):
     if margins is None:
         margins = [10, 10, 10, 10]
@@ -101,7 +90,8 @@ def make_image_grid(imgs, rows, cols, row_labels: list[str], col_labels: list[st
         label_image = make_label_image(l, row_font, w, h, margins=[20, 10, 20, 10])
         grid.paste(label_image, box=(margin, margin + (1 + i) * (h + spacing)))
 
-    for i, img in enumerate(imgs):
+    print(f"compositing {len(imgs)} images...")
+    for i, img in tqdm(enumerate(imgs)):
         grid.paste(img, box=(margin + (1 + (i % cols)) * (w + spacing), margin + (1 + (i // cols)) * (h + spacing)))
 
     return grid
@@ -217,4 +207,6 @@ if __name__ == '__main__':
                              device=args.device,
                              size=(args.width,args.height),
                              batch_size=args.batch_size)
+    print(f"saving to {args.output_path}...")
     grid.save(args.output_path)
+    print("done.")
