@@ -152,13 +152,14 @@ def render_row(prompts: list[str],
     return images
 
 
-def render_all(prompts: list[str], seeds: list[int], repo_ids_or_paths: list[str], device: str) -> Image:
+def render_all(prompts: list[str], seeds: list[int], repo_ids_or_paths: list[str], device: str,
+               size: tuple[int,int], batch_size: int) -> Image:
     all_images = []
     print(f"{len(prompts)} prompts")
     progress_bar = tqdm(repo_ids_or_paths)
     for repo_id_or_path in progress_bar:
         progress_bar.set_description(f"model {repo_id_or_path}")
-        row_images = render_row(prompts, seeds, repo_id_or_path, device=device)
+        row_images = render_row(prompts, seeds, repo_id_or_path, device=device, batch_size=batch_size, sample_w=size[0], sample_h=size[1])
         all_images += row_images
 
     grid_image = make_image_grid(all_images, len(repo_ids_or_paths), len(prompts), repo_ids_or_paths, prompts)
@@ -188,10 +189,24 @@ if __name__ == '__main__':
                         required=False,
                         default=None,
                         help="device to use, eg 'cuda', 'mps', 'cpu'. if omitted, will try to pick the best device.")
+    parser.add_argument("--batch_size",
+                        required=False,
+                        default=1,
+                        help="batch size, default 1")
+    parser.add_argument("--width",
+                        required=False,
+                        default=512,
+                        help="individual image width")
+    parser.add_argument("--width",
+                        required=False,
+                        default=512,
+                        help="individual image height")
     args = parser.parse_args()
 
     grid: Image = render_all(prompts=args.prompts,
                              seeds=[1+i for i in range(len(args.prompts))],
                              repo_ids_or_paths=args.repo_ids_or_paths,
-                             device=args.device)
+                             device=args.device,
+                             size=(args.width,args.height),
+                             batch_size=args.batch_size)
     grid.save(args.output_path)

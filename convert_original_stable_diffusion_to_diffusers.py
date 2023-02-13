@@ -20,6 +20,8 @@ import re
 
 import torch
 
+from safetensors import safe_open
+
 
 try:
     from omegaconf import OmegaConf
@@ -791,37 +793,47 @@ def load_pipeline_from_original_stable_diffusion_ckpt(
         scheduler_type: str = 'pndm',
         num_in_channels: int = None,
         upcast_attention: bool = None,
-        device: str = None
+        device: str = None,
+        from_safetensors: bool = False
 ) -> StableDiffusionPipeline:
     """
-    Load a Stable Diffusion pipeline object from a CompVis-style ckpt file + (ideally) a yaml config file.
+    Load a Stable Diffusion pipeline object from a CompVis-style `.ckpt`/`.safetensors` file and (ideally) a `.yaml` config file.
 
     Although many of the arguments can be automatically inferred, some of these rely on brittle checks against the
     global step count, which will likely fail for models that have undergone further fine-tuning. Therefore, it is
-    recommended that you override the defaults wherever possible.
+    recommended that you override the default values and/or supply an `original_config_file` wherever possible.
 
-    :param checkpoint_path: Path to .ckpt file.
-    :param original_config_file: Path to .yaml config file corresponding to the original architecture. If None, will be
+    :param checkpoint_path: Path to `.ckpt` file.
+    :param original_config_file: Path to `.yaml` config file corresponding to the original architecture. If `None`, will be
             automatically inferred by looking for a key that only exists in SD2.0 models.
     :param image_size: The image size that the model was trained on. Use 512 for Stable Diffusion v1.X and Stable Siffusion v2
             Base. Use 768 for Stable Diffusion v2.
-    :param prediction_type: The prediction type that the model was trained on. Use 'epsilon' for Stable Diffusion v1.X and Stable
-            Siffusion v2 Base. Use 'v-prediction' for Stable Diffusion v2.
+    :param prediction_type: The prediction type that the model was trained on. Use `'epsilon'` for Stable Diffusion v1.X and Stable
+            Siffusion v2 Base. Use `'v-prediction'` for Stable Diffusion v2.
     :param num_in_channels: The number of input channels. If `None` number of input channels will be automatically inferred.
-    :param scheduler_type: Type of scheduler to use. Should be one of ["pndm", "lms", "heun", "euler", "euler-ancestral", "dpm", "ddim"].
-    :param model_type: The pipeline type. `None` to automatically infer, or one of ["FrozenOpenCLIPEmbedder", "FrozenCLIPEmbedder", "PaintByExample"].
+    :param scheduler_type: Type of scheduler to use. Should be one of `["pndm", "lms", "heun", "euler", "euler-ancestral", "dpm", "ddim"]`.
+    :param model_type: The pipeline type. `None` to automatically infer, or one of `["FrozenOpenCLIPEmbedder", "FrozenCLIPEmbedder", "PaintByExample"]`.
     :param extract_ema: Only relevant for checkpoints that have both EMA and non-EMA weights. Whether to extract the EMA weights
-            or not. Defaults to `False`. Add `--extract_ema` to extract the EMA weights. EMA weights usually yield
+            or not. Defaults to `False`. Pass `True` to extract the EMA weights. EMA weights usually yield
             higher quality images for inference. Non-EMA weights are usually better to continue fine-tuning.
     :param upcast_attention: Whether the attention computation should always be upcasted. This is necessary when running
                     stable diffusion 2.1.
-    :param device: The device
-    :return: A StableDiffusionPipeline object for the passed-in ckpt file.
+    :param device: The device to use. Pass `None` to determine automatically.
+    :param from_safetensors: If `checkpoint_path` is in `safetensors` format, load checkpoint with safetensors instead of PyTorch.
+    :return: A StableDiffusionPipeline object representing the passed-in `.ckpt`/`.safetensors` file.
     """
 
-    if device is None:
-        device = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
-    checkpoint = torch.load(checkpoint_path, map_location=device)
+    if from_safetensors:
+        checkpoint = {}
+        with safe_open(checkpoint_path, framework="pt", device="cpu") as f:
+            for key in f.keys():
+                checkpoint[key] = f.get_tensor(key)
+    else:
+        if device is None:
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            checkpoint = torch.load(checkpoint_path, map_location=device)
+        else:
+            checkpoint = torch.load(checkpoint_path, map_location=args.device)
 
     # Sometimes models don't have the global_step item
     if "global_step" in checkpoint:
@@ -1054,6 +1066,11 @@ if __name__ == "__main__":
             " diffusion 2.1."
         ),
     )
+    parser.add_argument(
+        "--from_safetensors",
+        action="store_true",
+        help="If `--checkpoint_path` is in `safetensors` format, load checkpoint with safetensors instead of PyTorch.",
+    )
     parser.add_argument("--dump_path", default=None, type=str, required=True, help="Path to the output model.")
     parser.add_argument("--device", type=str, help="Device to use (e.g. cpu, cuda:0, cuda:1, etc.)")
     args = parser.parse_args()
@@ -1067,7 +1084,8 @@ if __name__ == "__main__":
         extract_ema=args.extract_ema,
         scheduler_type=args.scheduler_type,
         num_in_channels=args.num_in_channels,
-        upcast_attention=args.upcast_attention
+        upcast_attention=args.upcast_attention,
+        from_safetensors=args.from_safetensors
     )
     pipe.save_pretrained(args.dump_path)
 
