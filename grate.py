@@ -191,6 +191,7 @@ if __name__ == '__main__':
                         help="device to use, eg 'cuda', 'mps', 'cpu'. if omitted, will try to pick the best device.")
     parser.add_argument("--batch_size",
                         required=False,
+                        type=int,
                         default=1,
                         help="batch size, default 1")
     parser.add_argument("--width",
