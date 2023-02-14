@@ -174,7 +174,7 @@ def merge_models(model_a_repo_id_or_path: str, model_b_repo_id_or_path: str, mod
 
     interp = "weighted_sum" if model_c_repo_id_or_path is None else "add_diff"
     force = True
-    models = [model_c_repo_id_or_path, model_b_repo_id_or_path]
+    models = [model_a_repo_id_or_path, model_b_repo_id_or_path]
     if model_c_repo_id_or_path is not None:
         models.append(model_c_repo_id_or_path)
     merged_pipe = pipe.merge(models, interp=interp, alpha=alpha, force=force)
