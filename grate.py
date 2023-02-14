@@ -166,16 +166,18 @@ def render_row(prompts: list[str],
 
     return images
 
-def merge_models(model_a_repo_id_or_path, model_b_repo_id_or_path, alpha=0.5) -> StableDiffusionPipeline:
+def merge_models(model_a_repo_id_or_path: str, model_b_repo_id_or_path: str, model_c_repo_id_or_path: Optional[str], alpha=0.5) -> StableDiffusionPipeline:
     """
-    Merge the two given models using the given alpha (0.0=100% model a, 1.0=100% model b)
+    Merge the two or three given models using the given alpha (for two models: 0.0=100% model a, 1.0=100% model b)
     """
-
     pipe = StableDiffusionPipeline.from_pretrained(model_a_repo_id_or_path, custom_pipeline="checkpoint_merger")
 
-    interp = "weighted_sum"
+    interp = "weighted_sum" if model_c_repo_id_or_path is None else "add_diff"
     force = True
-    merged_pipe = pipe.merge(model_b_repo_id_or_path, interp=interp, alpha=alpha, force=force)
+    models = [model_c_repo_id_or_path, model_b_repo_id_or_path]
+    if model_c_repo_id_or_path is not None:
+        models.append(model_c_repo_id_or_path)
+    merged_pipe = pipe.merge(models, interp=interp, alpha=alpha, force=force)
     del pipe
 
     return merged_pipe
@@ -199,8 +201,9 @@ def render_all(prompts: list[str], negative_prompts: Optional[list[str]], seeds:
         if len(repo_ids_or_paths) != 2:
             raise ValueError("Must specify exactly 2 models when using merge_alphas")
         for alpha in tqdm(merge_alphas):
-            print(f"merged model from {repo_ids_or_paths[0]} and {repo_ids_or_paths[1]} with alpha={alpha}:")
-            pipeline = merge_models(repo_ids_or_paths[0], repo_ids_or_paths[1], alpha=alpha)
+            print(f"merged model from {repo_ids_or_paths} with alpha={alpha}:")
+            model_c = None if len(repo_ids_or_paths) < 3 else repo_ids_or_paths[2]
+            pipeline = merge_models(repo_ids_or_paths[0], repo_ids_or_paths[1], model_c, alpha=alpha)
             row_images = render_row(prompts,
                                 negative_prompts=negative_prompts,
                                 seeds=seeds,
