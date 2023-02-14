@@ -171,11 +171,14 @@ def render_row(prompts: list[str],
 
 
 def merge_models(model_a_repo_id_or_path: str, model_b_repo_id_or_path: str, model_c_repo_id_or_path: Optional[str],
-                 alpha=0.5, algorithm: str = 'weighted_sum') -> StableDiffusionPipeline:
+                 alpha=0.5, algorithm: Optional[str] = None) -> StableDiffusionPipeline:
     """
     Merge the two or three given models using the given alpha (for two models: 0.0=100% model a, 1.0=100% model b)
     """
     pipe = StableDiffusionPipeline.from_pretrained(model_a_repo_id_or_path, custom_pipeline="checkpoint_merger")
+
+    if algorithm is None:
+        algorithm = 'add_diff' if model_c_repo_id_or_path is not None else 'weighted_sum'
 
     if model_c_repo_id_or_path is not None:
         if algorithm != "add_diff":
@@ -195,9 +198,10 @@ def merge_models(model_a_repo_id_or_path: str, model_b_repo_id_or_path: str, mod
 
 
 def render_all(prompts: list[str], negative_prompts: Optional[list[str]], seeds: list[int],
-               repo_ids_or_paths: list[str], merge_alphas: Optional[list[float]], merge_algorithm: Optional[str],
+               repo_ids_or_paths: list[str],
                device: str,
-               size: tuple[int, int], batch_size: int, save_partial_filename: str = None) -> Image:
+               size: tuple[int, int], batch_size: int, save_partial_filename: str = None,
+               merge_alphas: Optional[list[float]]=None, merge_algorithm: Optional[str]=None) -> Image:
     all_images = []
     print(f"{len(prompts)} prompts")
 
@@ -297,7 +301,7 @@ if __name__ == '__main__':
     parser.add_argument("--merge_algorithm",
                         required=False,
                         type=str,
-                        default='weighted_sum',
+                        default=None,
                         help="(Optional) If doing merges, the algorithm to use - one of 'weighted_sum', 'sigmoid', 'inv_sigmoid', or 'add_diff'. 'add_diff' only works for 3-way merge.")
     parser.add_argument("--negative_prompts",
                         required=False,
