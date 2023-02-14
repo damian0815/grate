@@ -192,7 +192,7 @@ def render_all(prompts: list[str], negative_prompts: Optional[list[str]], seeds:
             num_rows = int(len(all_images) / len(prompts))
             grid_image = make_image_grid(all_images, num_rows=num_rows, num_cols=len(prompts),
                                          row_labels=repo_ids_or_paths[:num_rows], col_labels=prompts)
-            grid_image.save(f"{save_partial_prefix}-row{num_rows:02 }.jpg")
+            grid_image.save(f"{save_partial_prefix}-row{num_rows:02}.jpg")
 
 
     if merge_alphas is not None:
@@ -297,6 +297,7 @@ if __name__ == '__main__':
             negative_prompts = [p.get('negative_prompt', '') for p in prompts_json]
             seeds = [int(p.get('seed', 1 + i)) for i, p in enumerate(prompts_json)]
             print(f"loaded {len(prompts)} prompts from {args.prompts[0]}")
+            print({'prompts': prompts, 'negative_prompts': negative_prompts, 'seeds': seeds})
     else:
         def use_arg_list_or_expand_or_default(arg: list, required_count: int, default: list) -> list:
             if arg is None:
