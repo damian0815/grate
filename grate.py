@@ -299,7 +299,7 @@ if __name__ == '__main__':
     seeds = use_arg_list_or_expand_or_default(args.seeds, len(args.prompts), [1 + i for i in range(len(args.prompts))])
     negative_prompts = use_arg_list_or_expand_or_default(args.negative_prompts, len(args.prompts), [1 + i for i in range(len(args.prompts))])
     grid: Image = render_all(prompts=args.prompts,
-                             negative_prompts=args.negative_prompts,
+                             negative_prompts=negative_prompts,
                              seeds=seeds,
                              repo_ids_or_paths=args.repo_ids_or_paths,
                              merge_alphas=args.merge_alphas,
