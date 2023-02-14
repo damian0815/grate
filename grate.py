@@ -1,6 +1,7 @@
 # adapted from https://colab.research.google.com/github/pcuenca/diffusers-examples/blob/main/notebooks/stable-diffusion-seeds.ipynb#scrollTo=36026528
 import os
 import argparse
+from typing import Optional
 
 import torch
 from diffusers import StableDiffusionPipeline, DPMSolverMultistepScheduler
@@ -65,15 +66,15 @@ def make_label_image(label: str, font: ImageFont, width: int, height: int, margi
     return label_image
 
 
-def make_image_grid(imgs, rows, cols, row_labels: list[str], col_labels: list[str]):
-    assert len(imgs) == rows * cols
-    assert len(row_labels) == rows
-    assert len(col_labels) == cols
+def make_image_grid(imgs, num_rows, num_cols, row_labels: list[str], col_labels: list[str]):
+    assert len(imgs) == num_rows * num_cols
+    assert len(row_labels) == num_rows
+    assert len(col_labels) == num_cols
 
     w, h = imgs[0].size
     margin = int(0.125 * w)
     spacing = int(0.125 * w)
-    grid = Image.new('RGB', size=(margin + (cols + 1) * (w + spacing), margin + (rows + 1) * (h + spacing)),
+    grid = Image.new('RGB', size=(margin + (num_cols + 1) * (w + spacing), margin + (num_rows + 1) * (h + spacing)),
                      color=(255, 255, 255))
     # grid_w, grid_h = grid.size
 
@@ -92,7 +93,7 @@ def make_image_grid(imgs, rows, cols, row_labels: list[str], col_labels: list[st
 
     print(f"compositing {len(imgs)} images...")
     for i, img in tqdm(enumerate(imgs)):
-        grid.paste(img, box=(margin + (1 + (i % cols)) * (w + spacing), margin + (1 + (i // cols)) * (h + spacing)))
+        grid.paste(img, box=(margin + (1 + (i % num_cols)) * (w + spacing), margin + (1 + (i // num_cols)) * (h + spacing)))
 
     return grid
 
@@ -103,12 +104,14 @@ def chunk_list(list, batch_size):
 
 
 def render_row(prompts: list[str],
+               negative_prompts: Optional[list[str]],
                seeds: list[int],
                repo_id_or_path: str,
                device: str=None,
                batch_size=1,
                sample_w = 512,
                sample_h = 512,
+               cfg = 7.5,
                num_inference_steps = 15 # ddpm++ solver: 15 is typically enough
                ) -> list[Image]:
 
@@ -133,29 +136,54 @@ def render_row(prompts: list[str],
     for batch in progress_bar:
         prompts = [item[0] for item in batch]
         seeds = [item[1] for item in batch]
-        progress_bar.set_description(f"{prompts}")
-        #print(f" - {prompts}")
+        #progress_bar.set_description(f"{prompts}")
+        print(f" - {prompts}")
         generator_device = 'cpu' if device == 'mps' else device
         manual_seed_generators = [torch.Generator(generator_device).manual_seed(seed) for seed in seeds]
         pipeline_output: StableDiffusionPipelineOutput = pipeline(prompts,
+                                                                  negative_prompts=negative_prompts or [""] * len(prompts),
                                                                   generator=manual_seed_generators,
                                                                   width=sample_w,
                                                                   height=sample_h,
-                                                                  num_inference_steps=num_inference_steps)
+                                                                  num_inference_steps=num_inference_steps,
+                                                                  guidance_scale=cfg)
         images += pipeline_output.images
 
     return images
 
 
-def render_all(prompts: list[str], seeds: list[int], repo_ids_or_paths: list[str], device: str,
-               size: tuple[int,int], batch_size: int) -> Image:
+def render_all(prompts: list[str], negative_prompts: Optional[list[str]], seeds: list[int],
+               repo_ids_or_paths: list[str], merge_alphas: Optional[list[float]],
+               device: str,
+               size: tuple[int,int], batch_size: int, save_partial_prefix: str=None) -> Image:
     all_images = []
     print(f"{len(prompts)} prompts")
+
+    if merge_alphas is not None:
+        if len(repo_ids_or_paths) != 2:
+            raise ValueError("Must specify exactly 2 models when using merge_alphas")
+
+        pipe = DiffusionPipeline.from_pretrained("CompVis/stable-diffusion-v1-4",
+                                                 custom_pipeline="checkpoint_merger.py")
+        merged_pipe = pipe.merge(["CompVis/stable-diffusion-v1-4", "prompthero/openjourney"], interp='inv_sigmoid',
+                                 alpha=0.8, force=True)
+
     progress_bar = tqdm(repo_ids_or_paths)
     for repo_id_or_path in progress_bar:
-        progress_bar.set_description(f"model {repo_id_or_path}")
-        row_images = render_row(prompts, seeds, repo_id_or_path, device=device, batch_size=batch_size, sample_w=size[0], sample_h=size[1])
+        #progress_bar.set_description(f"model {repo_id_or_path}")
+        print(f"model {repo_id_or_path}:")
+        row_images = render_row(prompts,
+                                negative_prompts=negative_prompts,
+                                seeds=seeds,
+                                repo_id_or_path=repo_id_or_path,
+                                device=device,
+                                batch_size=batch_size,
+                                sample_w=size[0], sample_h=size[1])
         all_images += row_images
+        if save_partial_prefix is not None:
+            num_rows = len(all_images) / len(prompts)
+            grid_image = make_image_grid(all_images, num_rows=num_rows, num_cols=len(prompts), row_labels=repo_ids_or_paths[:num_rows], col_labels=prompts)
+            grid_image.save(f"{save_partial_prefix}-row{num_rows+1}.jpg")
 
     grid_image = make_image_grid(all_images, len(repo_ids_or_paths), len(prompts), repo_ids_or_paths, prompts)
     return grid_image
@@ -199,11 +227,39 @@ if __name__ == '__main__':
                         type=int,
                         default=512,
                         help="individual image height")
+    parser.add_argument("--merge_alphas",
+                        required=False,
+                        type=float,
+                        nargs="+",
+                        help="(Optional) If set, --repo_ids_or_paths must specify exactly 2 models, which will be blended using the given alphas and used in place of multiple models.")
+    parser.add_argument("--negative_prompts",
+                        required=False,
+                        type=str,
+                        nargs="+",
+                        help="(Optional) Negative prompts. Must be either 1 string to use for all prompts, or one string for each prompt passed to --prompts.")
+    parser.add_argument("--seeds",
+                        required=False,
+                        type=int,
+                        nargs="+",
+                        help="(Optional) Seeds. Must be either 1 int to use for all prompts, or specify one seed per prompts.")
     args = parser.parse_args()
 
+    def use_arg_list_or_expand_or_default(arg: list, required_count: int, default: list) -> list:
+        if arg is None:
+            return default
+        elif len(arg) == 1:
+            # expand to required count
+            return arg * required_count
+        else:
+            return arg
+
+    seeds = use_arg_list_or_expand_or_default(args.seeds, len(args.prompts), [1 + i for i in range(len(args.prompts))])
+    negative_prompts = use_arg_list_or_expand_or_default(args.negative_prompts, len(args.prompts), [1 + i for i in range(len(args.prompts))])
     grid: Image = render_all(prompts=args.prompts,
-                             seeds=[1+i for i in range(len(args.prompts))],
+                             negative_prompts=args.negative_prompts,
+                             seeds=seeds,
                              repo_ids_or_paths=args.repo_ids_or_paths,
+                             merge_alphas=args.blend_alphas,
                              device=args.device,
                              size=(args.width,args.height),
                              batch_size=args.batch_size)
