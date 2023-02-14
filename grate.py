@@ -1,4 +1,5 @@
 # adapted from https://colab.research.google.com/github/pcuenca/diffusers-examples/blob/main/notebooks/stable-diffusion-seeds.ipynb#scrollTo=36026528
+import json
 import os
 import argparse
 from typing import Optional
@@ -191,7 +192,7 @@ def render_all(prompts: list[str], negative_prompts: Optional[list[str]], seeds:
             num_rows = int(len(all_images) / len(prompts))
             grid_image = make_image_grid(all_images, num_rows=num_rows, num_cols=len(prompts),
                                          row_labels=repo_ids_or_paths[:num_rows], col_labels=prompts)
-            grid_image.save(f"{save_partial_prefix}-row{num_rows + 1}.jpg")
+            grid_image.save(f"{save_partial_prefix}-row{num_rows:02 }.jpg")
 
 
     if merge_alphas is not None:
@@ -232,11 +233,13 @@ if __name__ == '__main__':
         prog="grate",
         description="Generates a grid of images by running a set of prompts through different Stable Diffusion models.",
     )
+
     parser.add_argument("--prompts",
                         nargs='+',
                         required=True,
-                        help="prompts to render, as strings enclosed in \"\" and separated by spaces. eg "
-                             "--prompts \"a cat\" \"a dog\" \"a fish\"")
+                        help=("EITHER: a path to a JSON file containing prompt and negative prompt pairs eg [{'prompt': 'a fish', 'negative_prompt': 'distorted', 'seed': 123}, ...]. \n\n" +
+                             "OR: multiple strings enclosed in \"\" and separated by spaces. eg --prompts \"a cat\" \"a dog\" \"a fish\"")
+                        )
     parser.add_argument("--repo_ids_or_paths",
                         nargs='+',
                         required=True,
@@ -287,18 +290,28 @@ if __name__ == '__main__':
                         help="(Optional) If set, save progress images using the given prefix. eg 'tmp/grate-partial' will save images to '/tmp/grate-partial-row1.jpg' etc.")
     args = parser.parse_args()
 
-    def use_arg_list_or_expand_or_default(arg: list, required_count: int, default: list) -> list:
-        if arg is None:
-            return default
-        elif len(arg) == 1:
-            # expand to required count
-            return arg * required_count
-        else:
-            return arg
+    if os.path.isfile(args.prompts):
+        with open(args.prompts, 'rt') as f:
+            prompts_json = json.load(f)
+            prompts = [p.get('prompt', '') for p in prompts_json]
+            negative_prompts = [p.get('negative_prompt', '') for p in prompts_json]
+            seeds = [int(p.get('seed', 1 + i)) for i, p in enumerate(prompts_json)]
+    else:
+        def use_arg_list_or_expand_or_default(arg: list, required_count: int, default: list) -> list:
+            if arg is None:
+                return default
+            elif len(arg) == 1:
+                # expand to required count
+                return arg * required_count
+            else:
+                return arg
 
-    seeds = use_arg_list_or_expand_or_default(args.seeds, len(args.prompts), [1 + i for i in range(len(args.prompts))])
-    negative_prompts = use_arg_list_or_expand_or_default(args.negative_prompts, len(args.prompts), [1 + i for i in range(len(args.prompts))])
-    grid: Image = render_all(prompts=args.prompts,
+        prompts = args.prompts
+        negative_prompts = use_arg_list_or_expand_or_default(args.negative_prompts, len(prompts), [''] * len(prompts))
+        seeds = use_arg_list_or_expand_or_default(args.seeds, len(prompts), [1 + i for i in range(len(prompts))])
+
+
+    grid: Image = render_all(prompts=prompts,
                              negative_prompts=negative_prompts,
                              seeds=seeds,
                              repo_ids_or_paths=args.repo_ids_or_paths,
