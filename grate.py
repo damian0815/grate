@@ -4,13 +4,12 @@ import argparse
 from typing import Optional
 
 import torch
+from diffusers.pipelines.stable_diffusion.convert_from_ckpt import load_pipeline_from_original_stable_diffusion_ckpt
 from diffusers import StableDiffusionPipeline, DPMSolverMultistepScheduler
 from PIL import Image, ImageDraw, ImageFont
 from diffusers.pipelines.stable_diffusion import StableDiffusionPipelineOutput
 from diffusers.utils import is_xformers_available
 from tqdm import tqdm
-
-from convert_original_stable_diffusion_to_diffusers import load_pipeline_from_original_stable_diffusion_ckpt
 
 # get_wrapped_text adapted from https://stackoverflow.com/a/67203353
 def get_wrapped_text(text: str, font: ImageFont.ImageFont,
@@ -110,7 +109,7 @@ def load_model(repo_id_or_path):
     if os.path.isfile(repo_id_or_path):
         return load_pipeline_from_original_stable_diffusion_ckpt(repo_id_or_path)
     else:
-        return StableDiffusionPipeline.from_pretrained(repo_id_or_path)
+        return StableDiffusionPipeline.from_pretrained(repo_id_or_path, revision='fp16')
 
 
 def render_row(prompts: list[str],
@@ -137,7 +136,7 @@ def render_row(prompts: list[str],
             pipeline.enable_xformers_memory_efficient_attention()
     pipeline = pipeline.to(device)
     images = []
-    batches = chunk_list(list(zip(prompts,seeds)), batch_size)
+    batches = chunk_list(list(zip(prompts, seeds)), batch_size)
     progress_bar = tqdm(list(batches))
     for batch in progress_bar:
         prompts = [item[0] for item in batch]
@@ -260,7 +259,7 @@ if __name__ == '__main__':
                         required=False,
                         type=float,
                         nargs="+",
-                        help="(Optional) If set, --repo_ids_or_paths must specify exactly 2 models, which will be blended using the given alphas and used in place of multiple models.")
+                        help="(Optional) If set, --repo_ids_or_paths must specify exactly 2 models, which will be merged using the given alphas and used in place of multiple models.")
     parser.add_argument("--negative_prompts",
                         required=False,
                         type=str,
@@ -271,6 +270,11 @@ if __name__ == '__main__':
                         type=int,
                         nargs="+",
                         help="(Optional) Seeds. Must be either 1 int to use for all prompts, or specify one seed per prompts.")
+    parser.add_argument("--save_partial_prefix",
+                        required=False,
+                        type=str,
+                        default=None,
+                        help="(Optional) If set, save progress images using the given prefix. eg 'tmp/grate-partial' will save images to '/tmp/grate-partial-row1.jpg' etc.")
     args = parser.parse_args()
 
     def use_arg_list_or_expand_or_default(arg: list, required_count: int, default: list) -> list:
@@ -288,10 +292,11 @@ if __name__ == '__main__':
                              negative_prompts=args.negative_prompts,
                              seeds=seeds,
                              repo_ids_or_paths=args.repo_ids_or_paths,
-                             merge_alphas=args.blend_alphas,
+                             merge_alphas=args.merge_alphas,
                              device=args.device,
                              size=(args.width,args.height),
-                             batch_size=args.batch_size)
+                             batch_size=args.batch_size,
+                             save_partial_prefix=args.save_partial_prefix)
     print(f"saving to {args.output_path}...")
     grid.save(args.output_path)
     print("done.")
