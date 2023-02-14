@@ -113,10 +113,10 @@ def load_model(repo_id_or_path, prefer_fp16: bool=True):
     elif os.path.isdir(repo_id_or_path):
         return StableDiffusionPipeline.from_pretrained(repo_id_or_path)
     else:
-        revision = None # use default
+        revision = None  # use default
         if prefer_fp16:
             refs = list_repo_refs(repo_id_or_path)
-            fp16_ref = next((r for r in refs if r.name == 'fp16'), None)
+            fp16_ref = next((r for r in refs.branches if r.name == 'fp16'), None)
             if fp16_ref is not None:
                 revision = 'fp16'
         return StableDiffusionPipeline.from_pretrained(repo_id_or_path, revision=revision)
