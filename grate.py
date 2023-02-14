@@ -149,8 +149,9 @@ def render_row(prompts: list[str],
     negative_prompts = negative_prompts or [""] * len(prompts)
     batches = chunk_list(list(zip(prompts, negative_prompts, seeds)), batch_size)
     progress_bar = tqdm(list(batches))
-    for batch_prompts, batch_negative_prompts, batch_seeds in progress_bar:
-        print(f" - {prompts}")
+    for batch in progress_bar:
+        batch_prompts, batch_negative_prompts, batch_seeds = zip(*batch)
+        print(f" - {batch_prompts}")
         generator_device = 'cpu' if device == 'mps' else device
         manual_seed_generators = [torch.Generator(generator_device).manual_seed(seed) for seed in batch_seeds]
         pipeline_output: StableDiffusionPipelineOutput = pipeline(prompt=batch_prompts,
