@@ -71,6 +71,8 @@ def make_image_grid(imgs, num_rows, num_cols, row_labels: list[str], col_labels:
     assert len(row_labels) == num_rows
     assert len(col_labels) == num_cols
 
+    print("allocating image...")
+
     w, h = imgs[0].size
     margin = int(0.125 * w)
     spacing = int(0.125 * w)
@@ -83,6 +85,8 @@ def make_image_grid(imgs, num_rows, num_cols, row_labels: list[str], col_labels:
     col_font = ImageFont.truetype(font_path, size=32)
     row_font = ImageFont.truetype(font_path, size=48)
 
+    print(f"compositing {len(imgs)} images...")
+
     for i, l in enumerate(col_labels):
         label_image = make_label_image(l, col_font, w, h, margins=[10, 10, 10, 10])
         grid.paste(label_image, box=(margin + (1 + i) * (w + spacing), margin))
@@ -91,8 +95,8 @@ def make_image_grid(imgs, num_rows, num_cols, row_labels: list[str], col_labels:
         label_image = make_label_image(l, row_font, w, h, margins=[20, 10, 20, 10])
         grid.paste(label_image, box=(margin, margin + (1 + i) * (h + spacing)))
 
-    print(f"compositing {len(imgs)} images...")
-    for i, img in tqdm(enumerate(imgs)):
+    for i in tqdm(range(len(imgs))):
+        img = imgs[i]
         grid.paste(img, box=(margin + (1 + (i % num_cols)) * (w + spacing), margin + (1 + (i // num_cols)) * (h + spacing)))
 
     return grid
@@ -102,11 +106,17 @@ def chunk_list(list, batch_size):
     for i in range(0, len(list), batch_size):
         yield list[i:i+batch_size]
 
+def load_model(repo_id_or_path):
+    if os.path.isfile(repo_id_or_path):
+        return load_pipeline_from_original_stable_diffusion_ckpt(repo_id_or_path)
+    else:
+        return StableDiffusionPipeline.from_pretrained(repo_id_or_path)
+
 
 def render_row(prompts: list[str],
                negative_prompts: Optional[list[str]],
                seeds: list[int],
-               repo_id_or_path: str,
+               pipeline: StableDiffusionPipeline,
                device: str=None,
                batch_size=1,
                sample_w = 512,
@@ -115,17 +125,13 @@ def render_row(prompts: list[str],
                num_inference_steps = 15 # ddpm++ solver: 15 is typically enough
                ) -> list[Image]:
 
-    if os.path.isfile(repo_id_or_path):
-        pipeline = load_pipeline_from_original_stable_diffusion_ckpt(repo_id_or_path)
-    else:
-        pipeline = StableDiffusionPipeline.from_pretrained(repo_id_or_path)
-
     # ddpm++
     pipeline.scheduler = DPMSolverMultistepScheduler.from_config(pipeline.scheduler.config,
                                                                  algorithm_type="dpmsolver++")
     if device is None:
         device = 'cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu'
     if device == 'cuda':
+        # noinspection PyTypeChecker
         pipeline = pipeline.to(torch.float16)
         if is_xformers_available():
             pipeline.enable_xformers_memory_efficient_attention()
@@ -136,7 +142,6 @@ def render_row(prompts: list[str],
     for batch in progress_bar:
         prompts = [item[0] for item in batch]
         seeds = [item[1] for item in batch]
-        #progress_bar.set_description(f"{prompts}")
         print(f" - {prompts}")
         generator_device = 'cpu' if device == 'mps' else device
         manual_seed_generators = [torch.Generator(generator_device).manual_seed(seed) for seed in seeds]
@@ -151,6 +156,19 @@ def render_row(prompts: list[str],
 
     return images
 
+def merge_models(model_a_repo_id_or_path, model_b_repo_id_or_path, alpha=0.5) -> StableDiffusionPipeline:
+    """
+    Merge the two given models using the given alpha (0.0=100% model a, 1.0=100% model b)
+    """
+
+    pipe = StableDiffusionPipeline.from_pretrained(model_a_repo_id_or_path, custom_pipeline="checkpoint_merger")
+
+    interp = "weighted_sum"
+    force = True
+    merged_pipe = pipe.merge(model_b_repo_id_or_path, interp=interp, alpha=alpha, force=force)
+    del pipe
+
+    return merged_pipe
 
 def render_all(prompts: list[str], negative_prompts: Optional[list[str]], seeds: list[int],
                repo_ids_or_paths: list[str], merge_alphas: Optional[list[float]],
@@ -159,31 +177,42 @@ def render_all(prompts: list[str], negative_prompts: Optional[list[str]], seeds:
     all_images = []
     print(f"{len(prompts)} prompts")
 
+    def save_partial_if_requested():
+        if save_partial_prefix is not None:
+            num_rows = len(all_images) / len(prompts)
+            grid_image = make_image_grid(all_images, num_rows=num_rows, num_cols=len(prompts),
+                                         row_labels=repo_ids_or_paths[:num_rows], col_labels=prompts)
+            grid_image.save(f"{save_partial_prefix}-row{num_rows + 1}.jpg")
+
+
     if merge_alphas is not None:
         if len(repo_ids_or_paths) != 2:
             raise ValueError("Must specify exactly 2 models when using merge_alphas")
-
-        pipe = DiffusionPipeline.from_pretrained("CompVis/stable-diffusion-v1-4",
-                                                 custom_pipeline="checkpoint_merger.py")
-        merged_pipe = pipe.merge(["CompVis/stable-diffusion-v1-4", "prompthero/openjourney"], interp='inv_sigmoid',
-                                 alpha=0.8, force=True)
-
-    progress_bar = tqdm(repo_ids_or_paths)
-    for repo_id_or_path in progress_bar:
-        #progress_bar.set_description(f"model {repo_id_or_path}")
-        print(f"model {repo_id_or_path}:")
-        row_images = render_row(prompts,
+        for alpha in tqdm(merge_alphas):
+            print(f"merged model from {repo_ids_or_paths[0]} and {repo_ids_or_paths[1]} with alpha={alpha}:")
+            pipeline = merge_models(repo_ids_or_paths[0], repo_ids_or_paths[1], alpha=alpha)
+            row_images = render_row(prompts,
                                 negative_prompts=negative_prompts,
                                 seeds=seeds,
-                                repo_id_or_path=repo_id_or_path,
+                                pipeline=pipeline,
                                 device=device,
                                 batch_size=batch_size,
                                 sample_w=size[0], sample_h=size[1])
-        all_images += row_images
-        if save_partial_prefix is not None:
-            num_rows = len(all_images) / len(prompts)
-            grid_image = make_image_grid(all_images, num_rows=num_rows, num_cols=len(prompts), row_labels=repo_ids_or_paths[:num_rows], col_labels=prompts)
-            grid_image.save(f"{save_partial_prefix}-row{num_rows+1}.jpg")
+            all_images += row_images
+            save_partial_if_requested()
+    else:
+        for repo_id_or_path in tqdm(repo_ids_or_paths):
+            print(f"model {repo_id_or_path}:")
+            pipeline = load_model(repo_id_or_path)
+            row_images = render_row(prompts,
+                                    negative_prompts=negative_prompts,
+                                    seeds=seeds,
+                                    pipeline=pipeline,
+                                    device=device,
+                                    batch_size=batch_size,
+                                    sample_w=size[0], sample_h=size[1])
+            all_images += row_images
+            save_partial_if_requested()
 
     grid_image = make_image_grid(all_images, len(repo_ids_or_paths), len(prompts), repo_ids_or_paths, prompts)
     return grid_image
