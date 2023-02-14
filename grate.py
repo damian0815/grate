@@ -14,6 +14,7 @@ from tqdm import tqdm
 
 from huggingface_hub import list_repo_refs
 
+
 # get_wrapped_text adapted from https://stackoverflow.com/a/67203353
 def get_wrapped_text(text: str, font: ImageFont.ImageFont,
                      line_length: int):
@@ -45,6 +46,7 @@ def get_wrapped_text(text: str, font: ImageFont.ImageFont,
     if current_line is not None:
         lines.append(current_line)
     return lines
+
 
 def make_label_image(label: str, font: ImageFont, width: int, height: int, margins=None):
     if margins is None:
@@ -99,16 +101,18 @@ def make_image_grid(imgs, num_rows, num_cols, row_labels: list[str], col_labels:
 
     for i in tqdm(range(len(imgs))):
         img = imgs[i]
-        grid.paste(img, box=(margin + (1 + (i % num_cols)) * (w + spacing), margin + (1 + (i // num_cols)) * (h + spacing)))
+        grid.paste(img,
+                   box=(margin + (1 + (i % num_cols)) * (w + spacing), margin + (1 + (i // num_cols)) * (h + spacing)))
 
     return grid
 
 
 def chunk_list(list, batch_size):
     for i in range(0, len(list), batch_size):
-        yield list[i:i+batch_size]
+        yield list[i:i + batch_size]
 
-def load_model(repo_id_or_path, prefer_fp16: bool=True):
+
+def load_model(repo_id_or_path, prefer_fp16: bool = True):
     if os.path.isfile(repo_id_or_path):
         return load_pipeline_from_original_stable_diffusion_ckpt(repo_id_or_path)
     elif os.path.isdir(repo_id_or_path):
@@ -127,14 +131,13 @@ def render_row(prompts: list[str],
                negative_prompts: Optional[list[str]],
                seeds: list[int],
                pipeline: StableDiffusionPipeline,
-               device: str=None,
+               device: str = None,
                batch_size=1,
-               sample_w = 512,
-               sample_h = 512,
-               cfg = 7.5,
-               num_inference_steps = 15 # ddpm++ solver: 15 is typically enough
+               sample_w=512,
+               sample_h=512,
+               cfg=7.5,
+               num_inference_steps=15  # ddpm++ solver: 15 is typically enough
                ) -> list[Image]:
-
     # ddpm++
     pipeline.scheduler = DPMSolverMultistepScheduler.from_config(pipeline.scheduler.config,
                                                                  algorithm_type="dpmsolver++")
@@ -166,7 +169,9 @@ def render_row(prompts: list[str],
 
     return images
 
-def merge_models(model_a_repo_id_or_path: str, model_b_repo_id_or_path: str, model_c_repo_id_or_path: Optional[str], alpha=0.5) -> StableDiffusionPipeline:
+
+def merge_models(model_a_repo_id_or_path: str, model_b_repo_id_or_path: str, model_c_repo_id_or_path: Optional[str],
+                 alpha=0.5) -> StableDiffusionPipeline:
     """
     Merge the two or three given models using the given alpha (for two models: 0.0=100% model a, 1.0=100% model b)
     """
@@ -182,22 +187,22 @@ def merge_models(model_a_repo_id_or_path: str, model_b_repo_id_or_path: str, mod
 
     return merged_pipe
 
+
 def render_all(prompts: list[str], negative_prompts: Optional[list[str]], seeds: list[int],
                repo_ids_or_paths: list[str], merge_alphas: Optional[list[float]],
                device: str,
-               size: tuple[int,int], batch_size: int, save_partial_prefix: str=None) -> Image:
+               size: tuple[int, int], batch_size: int, save_partial_filename: str = None) -> Image:
     all_images = []
     print(f"{len(prompts)} prompts")
 
     row_labels = []
 
     def save_partial_if_requested():
-        if save_partial_prefix is not None:
+        if save_partial_filename is not None:
             num_rows = int(len(all_images) / len(prompts))
             grid_image = make_image_grid(all_images, num_rows=num_rows, num_cols=len(prompts),
                                          row_labels=row_labels, col_labels=prompts)
-            grid_image.save(f"{save_partial_prefix}-row{num_rows:02}.jpg")
-
+            grid_image.save(save_partial_filename)
 
     if merge_alphas is not None:
         if len(repo_ids_or_paths) != 2:
@@ -209,12 +214,12 @@ def render_all(prompts: list[str], negative_prompts: Optional[list[str]], seeds:
             model_c = None if len(repo_ids_or_paths) < 3 else repo_ids_or_paths[2]
             pipeline = merge_models(repo_ids_or_paths[0], repo_ids_or_paths[1], model_c, alpha=alpha)
             row_images = render_row(prompts,
-                                negative_prompts=negative_prompts,
-                                seeds=seeds,
-                                pipeline=pipeline,
-                                device=device,
-                                batch_size=batch_size,
-                                sample_w=size[0], sample_h=size[1])
+                                    negative_prompts=negative_prompts,
+                                    seeds=seeds,
+                                    pipeline=pipeline,
+                                    device=device,
+                                    batch_size=batch_size,
+                                    sample_w=size[0], sample_h=size[1])
             all_images += row_images
             save_partial_if_requested()
         grid_image = make_image_grid(all_images, len(merge_alphas), len(prompts), row_labels, prompts)
@@ -246,8 +251,9 @@ if __name__ == '__main__':
     parser.add_argument("--prompts",
                         nargs='+',
                         required=True,
-                        help=("EITHER: a path to a JSON file containing prompt and negative prompt pairs eg [{'prompt': 'a fish', 'negative_prompt': 'distorted', 'seed': 123}, ...]. \n\n" +
-                             "OR: multiple strings enclosed in \"\" and separated by spaces. eg --prompts \"a cat\" \"a dog\" \"a fish\"")
+                        help=(
+                                    "EITHER: a path to a JSON file containing prompt and negative prompt pairs eg [{'prompt': 'a fish', 'negative_prompt': 'distorted', 'seed': 123}, ...]. \n\n" +
+                                    "OR: multiple strings enclosed in \"\" and separated by spaces. eg --prompts \"a cat\" \"a dog\" \"a fish\"")
                         )
     parser.add_argument("--repo_ids_or_paths",
                         nargs='+',
@@ -321,16 +327,13 @@ if __name__ == '__main__':
         negative_prompts = use_arg_list_or_expand_or_default(args.negative_prompts, len(prompts), [''] * len(prompts))
         seeds = use_arg_list_or_expand_or_default(args.seeds, len(prompts), [1 + i for i in range(len(prompts))])
 
-
-    grid: Image = render_all(prompts=prompts,
-                             negative_prompts=negative_prompts,
-                             seeds=seeds,
-                             repo_ids_or_paths=args.repo_ids_or_paths,
-                             merge_alphas=args.merge_alphas,
-                             device=args.device,
-                             size=(args.width,args.height),
-                             batch_size=args.batch_size,
-                             save_partial_prefix=args.save_partial_prefix)
-    print(f"saving to {args.output_path}...")
-    grid.save(args.output_path)
-    print("done.")
+    render_all(prompts=prompts,
+               negative_prompts=negative_prompts,
+               seeds=seeds,
+               repo_ids_or_paths=args.repo_ids_or_paths,
+               merge_alphas=args.merge_alphas,
+               device=args.device,
+               size=(args.width, args.height),
+               batch_size=args.batch_size,
+               save_partial_filename=args.output_path)
+    print(f"grate saved to {args.output_path}")
