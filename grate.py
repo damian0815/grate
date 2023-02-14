@@ -11,6 +11,8 @@ from diffusers.pipelines.stable_diffusion import StableDiffusionPipelineOutput
 from diffusers.utils import is_xformers_available
 from tqdm import tqdm
 
+from huggingface_hub import list_repo_refs
+
 # get_wrapped_text adapted from https://stackoverflow.com/a/67203353
 def get_wrapped_text(text: str, font: ImageFont.ImageFont,
                      line_length: int):
@@ -105,10 +107,18 @@ def chunk_list(list, batch_size):
     for i in range(0, len(list), batch_size):
         yield list[i:i+batch_size]
 
-def load_model(repo_id_or_path, revision: str=None):
+def load_model(repo_id_or_path, prefer_fp16: bool=True):
     if os.path.isfile(repo_id_or_path):
         return load_pipeline_from_original_stable_diffusion_ckpt(repo_id_or_path)
+    elif os.path.isdir(repo_id_or_path):
+        return StableDiffusionPipeline.from_pretrained(repo_id_or_path)
     else:
+        revision = None # use default
+        if prefer_fp16:
+            refs = list_repo_refs(repo_id_or_path)
+            fp16_ref = next((r for r in refs if r.name == 'fp16'), None)
+            if fp16_ref is not None:
+                revision = 'fp16'
         return StableDiffusionPipeline.from_pretrained(repo_id_or_path, revision=revision)
 
 
@@ -144,8 +154,8 @@ def render_row(prompts: list[str],
         print(f" - {prompts}")
         generator_device = 'cpu' if device == 'mps' else device
         manual_seed_generators = [torch.Generator(generator_device).manual_seed(seed) for seed in seeds]
-        pipeline_output: StableDiffusionPipelineOutput = pipeline(prompts,
-                                                                  negative_prompts=negative_prompts or [""] * len(prompts),
+        pipeline_output: StableDiffusionPipelineOutput = pipeline(prompt=prompts,
+                                                                  negative_prompt=negative_prompts or [""] * len(prompts),
                                                                   generator=manual_seed_generators,
                                                                   width=sample_w,
                                                                   height=sample_h,
@@ -178,7 +188,7 @@ def render_all(prompts: list[str], negative_prompts: Optional[list[str]], seeds:
 
     def save_partial_if_requested():
         if save_partial_prefix is not None:
-            num_rows = len(all_images) / len(prompts)
+            num_rows = int(len(all_images) / len(prompts))
             grid_image = make_image_grid(all_images, num_rows=num_rows, num_cols=len(prompts),
                                          row_labels=repo_ids_or_paths[:num_rows], col_labels=prompts)
             grid_image.save(f"{save_partial_prefix}-row{num_rows + 1}.jpg")
