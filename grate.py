@@ -189,11 +189,13 @@ def render_all(prompts: list[str], negative_prompts: Optional[list[str]], seeds:
     all_images = []
     print(f"{len(prompts)} prompts")
 
+    row_labels = []
+
     def save_partial_if_requested():
         if save_partial_prefix is not None:
             num_rows = int(len(all_images) / len(prompts))
             grid_image = make_image_grid(all_images, num_rows=num_rows, num_cols=len(prompts),
-                                         row_labels=repo_ids_or_paths[:num_rows], col_labels=prompts)
+                                         row_labels=row_labels, col_labels=prompts)
             grid_image.save(f"{save_partial_prefix}-row{num_rows:02}.jpg")
 
 
@@ -201,7 +203,9 @@ def render_all(prompts: list[str], negative_prompts: Optional[list[str]], seeds:
         if len(repo_ids_or_paths) != 2:
             raise ValueError("Must specify exactly 2 models when using merge_alphas")
         for alpha in tqdm(merge_alphas):
-            print(f"merged model from {repo_ids_or_paths} with alpha={alpha}:")
+            this_model_label = f"merged {repo_ids_or_paths} with alpha {alpha}"
+            row_labels.append(this_model_label)
+            print(this_model_label)
             model_c = None if len(repo_ids_or_paths) < 3 else repo_ids_or_paths[2]
             pipeline = merge_models(repo_ids_or_paths[0], repo_ids_or_paths[1], model_c, alpha=alpha)
             row_images = render_row(prompts,
@@ -213,7 +217,9 @@ def render_all(prompts: list[str], negative_prompts: Optional[list[str]], seeds:
                                 sample_w=size[0], sample_h=size[1])
             all_images += row_images
             save_partial_if_requested()
+        grid_image = make_image_grid(all_images, len(merge_alphas), len(prompts), row_labels, prompts)
     else:
+        row_labels = repo_ids_or_paths
         for repo_id_or_path in tqdm(repo_ids_or_paths):
             print(f"model {repo_id_or_path}:")
             pipeline = load_model(repo_id_or_path)
@@ -226,8 +232,8 @@ def render_all(prompts: list[str], negative_prompts: Optional[list[str]], seeds:
                                     sample_w=size[0], sample_h=size[1])
             all_images += row_images
             save_partial_if_requested()
+        grid_image = make_image_grid(all_images, len(repo_ids_or_paths), len(prompts), row_labels, prompts)
 
-    grid_image = make_image_grid(all_images, len(repo_ids_or_paths), len(prompts), repo_ids_or_paths, prompts)
     return grid_image
 
 
