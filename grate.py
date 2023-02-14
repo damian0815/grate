@@ -146,16 +146,15 @@ def render_row(prompts: list[str],
             pipeline.enable_xformers_memory_efficient_attention()
     pipeline = pipeline.to(device)
     images = []
-    batches = chunk_list(list(zip(prompts, seeds)), batch_size)
+    negative_prompts = negative_prompts or [""] * len(prompts)
+    batches = chunk_list(list(zip(prompts, negative_prompts, seeds)), batch_size)
     progress_bar = tqdm(list(batches))
-    for batch in progress_bar:
-        prompts = [item[0] for item in batch]
-        seeds = [item[1] for item in batch]
+    for batch_prompts, batch_negative_prompts, batch_seeds in progress_bar:
         print(f" - {prompts}")
         generator_device = 'cpu' if device == 'mps' else device
-        manual_seed_generators = [torch.Generator(generator_device).manual_seed(seed) for seed in seeds]
-        pipeline_output: StableDiffusionPipelineOutput = pipeline(prompt=prompts,
-                                                                  negative_prompt=negative_prompts or [""] * len(prompts),
+        manual_seed_generators = [torch.Generator(generator_device).manual_seed(seed) for seed in batch_seeds]
+        pipeline_output: StableDiffusionPipelineOutput = pipeline(prompt=batch_prompts,
+                                                                  negative_prompt=batch_negative_prompts,
                                                                   generator=manual_seed_generators,
                                                                   width=sample_w,
                                                                   height=sample_h,
