@@ -290,12 +290,13 @@ if __name__ == '__main__':
                         help="(Optional) If set, save progress images using the given prefix. eg 'tmp/grate-partial' will save images to '/tmp/grate-partial-row1.jpg' etc.")
     args = parser.parse_args()
 
-    if os.path.isfile(args.prompts):
-        with open(args.prompts, 'rt') as f:
+    if len(args.prompts) == 1 and os.path.isfile(args.prompts[0]):
+        with open(args.prompts[0], 'rt') as f:
             prompts_json = json.load(f)
             prompts = [p.get('prompt', '') for p in prompts_json]
             negative_prompts = [p.get('negative_prompt', '') for p in prompts_json]
             seeds = [int(p.get('seed', 1 + i)) for i, p in enumerate(prompts_json)]
+            print(f"loaded {len(prompts)} prompts from {args.prompts[0]}")
     else:
         def use_arg_list_or_expand_or_default(arg: list, required_count: int, default: list) -> list:
             if arg is None:
