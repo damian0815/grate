@@ -154,8 +154,8 @@ def render_row(prompts: list[str],
         print(f" - {batch_prompts}")
         generator_device = 'cpu' if device == 'mps' else device
         manual_seed_generators = [torch.Generator(generator_device).manual_seed(seed) for seed in batch_seeds]
-        pipeline_output: StableDiffusionPipelineOutput = pipeline(prompt=batch_prompts,
-                                                                  negative_prompt=batch_negative_prompts,
+        pipeline_output: StableDiffusionPipelineOutput = pipeline(prompt=list(batch_prompts),
+                                                                  negative_prompt=list(batch_negative_prompts),
                                                                   generator=manual_seed_generators,
                                                                   width=sample_w,
                                                                   height=sample_h,
