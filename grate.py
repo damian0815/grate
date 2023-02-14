@@ -171,25 +171,31 @@ def render_row(prompts: list[str],
 
 
 def merge_models(model_a_repo_id_or_path: str, model_b_repo_id_or_path: str, model_c_repo_id_or_path: Optional[str],
-                 alpha=0.5) -> StableDiffusionPipeline:
+                 alpha=0.5, algorithm: str = 'weighted_sum') -> StableDiffusionPipeline:
     """
     Merge the two or three given models using the given alpha (for two models: 0.0=100% model a, 1.0=100% model b)
     """
     pipe = StableDiffusionPipeline.from_pretrained(model_a_repo_id_or_path, custom_pipeline="checkpoint_merger")
 
-    interp = "weighted_sum" if model_c_repo_id_or_path is None else "add_diff"
+    if model_c_repo_id_or_path is not None:
+        if algorithm != "add_diff":
+            raise ValueError("Only add_diff is supported for 3-way merges")
+    else:
+        if algorithm == "add_diff":
+            raise ValueError("add_diff is not supported for 2-way merges")
+
     force = True
     models = [model_a_repo_id_or_path, model_b_repo_id_or_path]
     if model_c_repo_id_or_path is not None:
         models.append(model_c_repo_id_or_path)
-    merged_pipe = pipe.merge(models, interp=interp, alpha=alpha, force=force)
+    merged_pipe = pipe.merge(models, interp=algorithm, alpha=alpha, force=force)
     del pipe
 
     return merged_pipe
 
 
 def render_all(prompts: list[str], negative_prompts: Optional[list[str]], seeds: list[int],
-               repo_ids_or_paths: list[str], merge_alphas: Optional[list[float]],
+               repo_ids_or_paths: list[str], merge_alphas: Optional[list[float]], merge_algorithm: Optional[str],
                device: str,
                size: tuple[int, int], batch_size: int, save_partial_filename: str = None) -> Image:
     all_images = []
@@ -205,14 +211,14 @@ def render_all(prompts: list[str], negative_prompts: Optional[list[str]], seeds:
             grid_image.save(save_partial_filename)
 
     if merge_alphas is not None:
-        if len(repo_ids_or_paths) != 2:
-            raise ValueError("Must specify exactly 2 models when using merge_alphas")
+        if len(repo_ids_or_paths) != 2 and len(repo_ids_or_paths) != 3:
+            raise ValueError("Must specify either 2 or 3 models when using merge_alphas")
         for alpha in tqdm(merge_alphas):
             this_model_label = f"merged {repo_ids_or_paths} with alpha {alpha}"
             row_labels.append(this_model_label)
             print(this_model_label)
-            model_c = None if len(repo_ids_or_paths) < 3 else repo_ids_or_paths[2]
-            pipeline = merge_models(repo_ids_or_paths[0], repo_ids_or_paths[1], model_c, alpha=alpha)
+            model_c = repo_ids_or_paths[2] if len(repo_ids_or_paths) == 3 else None
+            pipeline = merge_models(repo_ids_or_paths[0], repo_ids_or_paths[1], model_c, alpha=alpha, algorithm=merge_algorithm)
             row_images = render_row(prompts,
                                     negative_prompts=negative_prompts,
                                     seeds=seeds,
@@ -287,7 +293,12 @@ if __name__ == '__main__':
                         required=False,
                         type=float,
                         nargs="+",
-                        help="(Optional) If set, --repo_ids_or_paths must specify exactly 2 models, which will be merged using the given alphas and used in place of multiple models.")
+                        help="(Optional) If set, --repo_ids_or_paths must specify either 2 or 3 models, which will be merged using the given alphas and used in place of multiple models.")
+    parser.add_argument("--merge_algorithm",
+                        required=False,
+                        type=str,
+                        default='weighted_sum',
+                        help="(Optional) If doing merges, the algorithm to use - one of 'weighted_sum', 'sigmoid', 'inv_sigmoid', or 'add_diff'. 'add_diff' only works for 3-way merge.")
     parser.add_argument("--negative_prompts",
                         required=False,
                         type=str,
@@ -298,11 +309,6 @@ if __name__ == '__main__':
                         type=int,
                         nargs="+",
                         help="(Optional) Seeds. Must be either 1 int to use for all prompts, or specify one seed per prompts.")
-    parser.add_argument("--save_partial_prefix",
-                        required=False,
-                        type=str,
-                        default=None,
-                        help="(Optional) If set, save progress images using the given prefix. eg 'tmp/grate-partial' will save images to '/tmp/grate-partial-row1.jpg' etc.")
     args = parser.parse_args()
 
     if len(args.prompts) == 1 and os.path.isfile(args.prompts[0]):
@@ -332,6 +338,7 @@ if __name__ == '__main__':
                seeds=seeds,
                repo_ids_or_paths=args.repo_ids_or_paths,
                merge_alphas=args.merge_alphas,
+               merge_algorithm=args.merge_algorithm,
                device=args.device,
                size=(args.width, args.height),
                batch_size=args.batch_size,
