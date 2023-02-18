@@ -173,7 +173,9 @@ def render_row(prompts: list[str],
 
 
 def merge_models(model_a_repo_id_or_path: str, model_b_repo_id_or_path: str, model_c_repo_id_or_path: Optional[str],
-                 alpha=0.5, algorithm: Optional[str] = None, unet_block_weights: Optional[list[float]] = None,
+                 alpha=0.5,
+                 algorithm: Optional[str] = None, unet_block_weights: Optional[list[float]] = None,
+                 per_module_alphas: Optional[dict[str,float]] = None,
                  local_files_only: bool = False) \
         -> StableDiffusionPipeline:
     """
@@ -203,7 +205,8 @@ def merge_models(model_a_repo_id_or_path: str, model_b_repo_id_or_path: str, mod
         models.append(model_c_repo_id_or_path)
     merged_pipe = pipe.merge(models, local_files_only=local_files_only, interp=algorithm,
                              alpha=alpha, force=force,
-                             block_weights=unet_block_weights)
+                             block_weights=unet_block_weights,
+                             module_override_alphas=per_module_alphas)
     del pipe
 
     return merged_pipe
@@ -236,6 +239,11 @@ def render_all(prompts: list[str], negative_prompts: Optional[list[str]], seeds:
         merge_algorithm = merge_config.get('algorithm', None) or 'weighted_sum'
         unet_block_weights_str = merge_config.get('block_weights', None)
         unet_block_weights = None if unet_block_weights_str is None else [float(f) for f in unet_block_weights_str.split(',')]
+
+        per_module_alphas = {
+            'unet': merge_config.get('unet_alpha', None),
+            'text_encoder': merge_config.get('text_encoder_alpha', None)
+        }
         if type(merge_algorithm) is list and len(merge_algorithm) != len(merge_alphas):
             raise ValueError("wrong number of values in merge config for `algorithm` - should be either a single string or an array of strings with the same length as `alphas`")
         if unet_block_weights is not None and len(unet_block_weights) != 25:
@@ -251,6 +259,7 @@ def render_all(prompts: list[str], negative_prompts: Optional[list[str]], seeds:
             algorithm = merge_algorithm if type(merge_algorithm) is str else merge_algorithm[i]
             pipeline = merge_models(repo_ids_or_paths[0], repo_ids_or_paths[1], model_c, alpha=alpha,
                                     algorithm=algorithm, unet_block_weights=unet_block_weights,
+                                    per_module_alphas=per_module_alphas,
                                     local_files_only=local_files_only)
             row_images = render_row(prompts,
                                     negative_prompts=negative_prompts,
@@ -357,6 +366,14 @@ if __name__ == '__main__':
                         required=False,
                         type=str,
                         help="(Optional) A string containing 25 comma-separated floats i.e. \"0.0, 0.0, 0.0, (... 22 more floats)\", to merge each part of the UNet using a different weight ('block-weighted merging').")
+    parser.add_argument("--merge_unet_alpha",
+                        required=False,
+                        type=float,
+                        help="(Optional) Override the merge alpha with a unet-specific alpha")
+    parser.add_argument("--merge_text_encoder_alpha",
+                        required=False,
+                        type=float,
+                        help="(Optional) Override the merge alpha with a text-encoder-specific alpha")
     args = parser.parse_args()
 
     if len(args.prompts) == 1 and os.path.isfile(args.prompts[0]):
@@ -386,6 +403,8 @@ if __name__ == '__main__':
         'alphas': args.merge_alphas,
         'algorithm': args.merge_algorithm,
         'block_weights': args.merge_unet_block_weights,
+        'unet_alpha': args.merge_unet_alpha,
+        'text_encoder_alpha': args.merge_text_encoder_alpha,
     }
 
     render_all(prompts=prompts,

@@ -187,6 +187,8 @@ class CheckpointMergerPipeline(DiffusionPipeline):
 
                 block_weights - list of 25 floats for per-block weighting. ref https://rentry.org/Merge_Block_Weight_-china-_v1_Beta#3-basic-theory-explanation
 
+                module_override_alphas - dict of str -> float for per-module alpha overrides eg {'unet': 0.2, 'text_encoder': 0.8}
+
         """
         # Default kwargs from DiffusionPipeline
         cache_dir = kwargs.pop("cache_dir", DIFFUSERS_CACHE)
@@ -202,6 +204,7 @@ class CheckpointMergerPipeline(DiffusionPipeline):
         alpha = kwargs.pop("alpha", 0.5)
         interp = kwargs.pop("interp", None)
         block_weights: list[float] = kwargs.pop("block_weights", None)
+        module_override_alphas: dict[str, float] = kwargs.pop("module_override_alphas", {})
 
         print("Received list", pretrained_model_name_or_path_list)
         print(f"Combining with alpha={alpha}, interpolation mode={interp}")
@@ -244,8 +247,8 @@ class CheckpointMergerPipeline(DiffusionPipeline):
         for idx in range(1, len(config_dicts)):
             comparison_result &= self._compare_model_configs(config_dicts[idx - 1], config_dicts[idx])
             if not force and comparison_result is False:
-                raise ValueError("Incompatible checkpoints. Please check model_index.json for the models.")
                 print(config_dicts[0], config_dicts[1])
+                raise ValueError("Incompatible checkpoints. Please check model_index.json for the models.")
         print("Compatible model_index.json files found")
         # Step 2: Basic Validation has succeeded. Let's download the models and save them into our local files.
         cached_folders = []
@@ -360,15 +363,15 @@ class CheckpointMergerPipeline(DiffusionPipeline):
                 print(f"MERGING {attr}")
 
                 for key in theta_0.keys():
-                    alpha = (
+                    this_alpha = (
                         get_block_alpha(block_weights, key)
                         if block_weights is not None and type(module) is UNet2DConditionModel
-                        else alpha
+                        else (module_override_alphas.get(attr, None) or alpha)
                     )
                     if theta_2:
-                        theta_0[key] = theta_func(theta_0[key], theta_1[key], theta_2[key], alpha)
+                        theta_0[key] = theta_func(theta_0[key], theta_1[key], theta_2[key], this_alpha)
                     else:
-                        theta_0[key] = theta_func(theta_0[key], theta_1[key], None, alpha)
+                        theta_0[key] = theta_func(theta_0[key], theta_1[key], None, this_alpha)
 
                 del theta_1
                 del theta_2
