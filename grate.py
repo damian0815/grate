@@ -112,7 +112,7 @@ def chunk_list(list, batch_size):
         yield list[i:i + batch_size]
 
 
-def load_model(repo_id_or_path, prefer_fp16: bool = True):
+def load_model(repo_id_or_path, prefer_fp16: bool = True, local_files_only: bool=False):
     if os.path.isfile(repo_id_or_path):
         return load_pipeline_from_original_stable_diffusion_ckpt(repo_id_or_path)
     elif os.path.isdir(repo_id_or_path):
@@ -124,7 +124,8 @@ def load_model(repo_id_or_path, prefer_fp16: bool = True):
             fp16_ref = next((r for r in refs.branches if r.name == 'fp16'), None)
             if fp16_ref is not None:
                 revision = 'fp16'
-        return StableDiffusionPipeline.from_pretrained(repo_id_or_path, revision=revision)
+        return StableDiffusionPipeline.from_pretrained(repo_id_or_path, revision=revision,
+                                                       local_files_only=local_files_only)
 
 
 def render_row(prompts: list[str],
@@ -171,15 +172,18 @@ def render_row(prompts: list[str],
 
 
 def merge_models(model_a_repo_id_or_path: str, model_b_repo_id_or_path: str, model_c_repo_id_or_path: Optional[str],
-                 alpha=0.5, algorithm: Optional[str] = None) -> StableDiffusionPipeline:
+                 alpha=0.5, algorithm: Optional[str] = None, local_files_only: bool = False) \
+        -> StableDiffusionPipeline:
     """
     Merge the two or three given models using the given alpha (for two models: 0.0=100% model a, 1.0=100% model b)
     """
-    pipe = StableDiffusionPipeline.from_pretrained(model_a_repo_id_or_path, custom_pipeline="checkpoint_merger")
+
+    pipe = StableDiffusionPipeline.from_pretrained(model_a_repo_id_or_path, local_files_only=local_files_only,
+                                                   #custom_pipeline="./checkpoint_merger.py")
+                                                    custom_pipeline = "checkpoint_merger")
 
     if algorithm is None:
         algorithm = 'add_diff' if model_c_repo_id_or_path is not None else 'weighted_sum'
-
     if model_c_repo_id_or_path is not None:
         if algorithm != "add_diff":
             raise ValueError("Only add_diff is supported for 3-way merges")
@@ -191,17 +195,20 @@ def merge_models(model_a_repo_id_or_path: str, model_b_repo_id_or_path: str, mod
     models = [model_a_repo_id_or_path, model_b_repo_id_or_path]
     if model_c_repo_id_or_path is not None:
         models.append(model_c_repo_id_or_path)
-    merged_pipe = pipe.merge(models, interp=algorithm, alpha=alpha, force=force)
+    merged_pipe = pipe.merge(models, local_files_only=local_files_only, interp=algorithm,
+                             alpha=alpha, force=force)
     del pipe
 
     return merged_pipe
 
 
-def render_all(prompts: list[str], negative_prompts: Optional[list[str]], seeds: list[int],
+def render_all(prompts: list[str], negative_prompts: Optional[list[str]], seeds: list[int], cfg: float,
                repo_ids_or_paths: list[str],
                device: str,
-               size: tuple[int, int], batch_size: int, save_partial_filename: str = None,
-               merge_alphas: Optional[list[float]]=None, merge_algorithm: Optional[str]=None) -> Image:
+               size: tuple[int, int], batch_size: int,
+                save_partial_filename: str = None, local_files_only: bool=False,
+               merge_config: Optional[dict] = None
+               ) -> Image:
     all_images = []
     print(f"{len(prompts)} prompts")
 
@@ -211,24 +218,34 @@ def render_all(prompts: list[str], negative_prompts: Optional[list[str]], seeds:
         if save_partial_filename is not None:
             num_rows = int(len(all_images) / len(prompts))
             grid_image = make_image_grid(all_images, num_rows=num_rows, num_cols=len(prompts),
-                                         row_labels=row_labels, col_labels=prompts)
+                                         row_labels=row_labels[:num_rows], col_labels=prompts)
             grid_image.save(save_partial_filename)
 
-    if merge_alphas is not None:
+    if merge_config is not None:
         if len(repo_ids_or_paths) != 2 and len(repo_ids_or_paths) != 3:
             raise ValueError("Must specify either 2 or 3 models when using merge_alphas")
-        for alpha in tqdm(merge_alphas):
-            this_model_label = f"merged {repo_ids_or_paths} with alpha {alpha}"
+
+        merge_alphas = merge_config['alphas']
+        merge_algorithm = merge_config.get('algorithm', None) or 'weighted_sum'
+        merge_block_weights_config = merge_config.get('block weights', None)
+        if type(merge_algorithm) is list and len(merge_algorithm) != len(merge_alphas):
+            print("wrong number of values in merge config for `algorithm` - should be either a single string or an array of strings with the same length as `alphas`")
+
+        for i, alpha in enumerate(tqdm(merge_alphas)):
+            this_model_label = f"{merge_algorithm} merge of {repo_ids_or_paths} with alpha {alpha}"
             row_labels.append(this_model_label)
             print(this_model_label)
             model_c = repo_ids_or_paths[2] if len(repo_ids_or_paths) == 3 else None
-            pipeline = merge_models(repo_ids_or_paths[0], repo_ids_or_paths[1], model_c, alpha=alpha, algorithm=merge_algorithm)
+            algorithm = merge_algorithm if type(merge_algorithm) is str else merge_algorithm[i]
+            pipeline = merge_models(repo_ids_or_paths[0], repo_ids_or_paths[1], model_c, alpha=alpha,
+                                    algorithm=algorithm, local_files_only=local_files_only)
             row_images = render_row(prompts,
                                     negative_prompts=negative_prompts,
                                     seeds=seeds,
                                     pipeline=pipeline,
                                     device=device,
                                     batch_size=batch_size,
+                                    cfg=cfg,
                                     sample_w=size[0], sample_h=size[1])
             all_images += row_images
             save_partial_if_requested()
@@ -237,13 +254,14 @@ def render_all(prompts: list[str], negative_prompts: Optional[list[str]], seeds:
         row_labels = repo_ids_or_paths
         for repo_id_or_path in tqdm(repo_ids_or_paths):
             print(f"model {repo_id_or_path}:")
-            pipeline = load_model(repo_id_or_path)
+            pipeline = load_model(repo_id_or_path, local_files_only=local_files_only)
             row_images = render_row(prompts,
                                     negative_prompts=negative_prompts,
                                     seeds=seeds,
                                     pipeline=pipeline,
                                     device=device,
                                     batch_size=batch_size,
+                                    cfg=cfg,
                                     sample_w=size[0], sample_h=size[1])
             all_images += row_images
             save_partial_if_requested()
@@ -293,6 +311,10 @@ if __name__ == '__main__':
                         type=int,
                         default=512,
                         help="individual image height")
+    parser.add_argument("--merge_config",
+                        required=False,
+                        type=str,
+                        help="(Optional) If set, path to a JSON file containing merge options (which can be partially overridden by the --merge_alphas and --merge_algorithm options)")
     parser.add_argument("--merge_alphas",
                         required=False,
                         type=float,
@@ -312,7 +334,16 @@ if __name__ == '__main__':
                         required=False,
                         type=int,
                         nargs="+",
-                        help="(Optional) Seeds. Must be either 1 int to use for all prompts, or specify one seed per prompts.")
+                        help="(Optional) Seeds. Must be either 1 int to use for all prompts, or exactly 1 int per prompt.")
+    parser.add_argument("--cfg",
+                        required=False,
+                        type=float,
+                        default=7.5,
+                        help="(Optional) CFG scale (default=7.5).")
+    parser.add_argument("--local_files_only",
+                        required=False,
+                        action='store_true',
+                        help="Use only local data (do not attempt to download or update models)")
     args = parser.parse_args()
 
     if len(args.prompts) == 1 and os.path.isfile(args.prompts[0]):
@@ -337,14 +368,21 @@ if __name__ == '__main__':
         negative_prompts = use_arg_list_or_expand_or_default(args.negative_prompts, len(prompts), [''] * len(prompts))
         seeds = use_arg_list_or_expand_or_default(args.seeds, len(prompts), [1 + i for i in range(len(prompts))])
 
+
+    merge_config = None if (args.merge_alphas is None and args.merge_algorithm is None) else {
+        'alphas': args.merge_alphas,
+        'algorithm': args.merge_algorithm
+    }
+
     render_all(prompts=prompts,
                negative_prompts=negative_prompts,
                seeds=seeds,
                repo_ids_or_paths=args.repo_ids_or_paths,
-               merge_alphas=args.merge_alphas,
-               merge_algorithm=args.merge_algorithm,
+               merge_config=merge_config,
                device=args.device,
                size=(args.width, args.height),
                batch_size=args.batch_size,
+               cfg=args.cfg,
+               local_files_only=args.local_files_only,
                save_partial_filename=args.output_path)
     print(f"grate saved to {args.output_path}")
