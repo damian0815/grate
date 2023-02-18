@@ -172,7 +172,8 @@ def render_row(prompts: list[str],
 
 
 def merge_models(model_a_repo_id_or_path: str, model_b_repo_id_or_path: str, model_c_repo_id_or_path: Optional[str],
-                 alpha=0.5, algorithm: Optional[str] = None, local_files_only: bool = False) \
+                 alpha=0.5, algorithm: Optional[str] = None, merge_block_weights_config: Optional[dict] = None,
+                 local_files_only: bool = False) \
         -> StableDiffusionPipeline:
     """
     Merge the two or three given models using the given alpha (for two models: 0.0=100% model a, 1.0=100% model b)
@@ -196,7 +197,8 @@ def merge_models(model_a_repo_id_or_path: str, model_b_repo_id_or_path: str, mod
     if model_c_repo_id_or_path is not None:
         models.append(model_c_repo_id_or_path)
     merged_pipe = pipe.merge(models, local_files_only=local_files_only, interp=algorithm,
-                             alpha=alpha, force=force)
+                             alpha=alpha, force=force,
+                             merge_block_weights_config=merge_block_weights_config)
     del pipe
 
     return merged_pipe
@@ -238,7 +240,8 @@ def render_all(prompts: list[str], negative_prompts: Optional[list[str]], seeds:
             model_c = repo_ids_or_paths[2] if len(repo_ids_or_paths) == 3 else None
             algorithm = merge_algorithm if type(merge_algorithm) is str else merge_algorithm[i]
             pipeline = merge_models(repo_ids_or_paths[0], repo_ids_or_paths[1], model_c, alpha=alpha,
-                                    algorithm=algorithm, local_files_only=local_files_only)
+                                    algorithm=algorithm, merge_block_weights_config=merge_block_weights_config,
+                                    local_files_only=local_files_only)
             row_images = render_row(prompts,
                                     negative_prompts=negative_prompts,
                                     seeds=seeds,
