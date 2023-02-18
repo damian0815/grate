@@ -2,6 +2,7 @@
 import json
 import os
 import argparse
+import pathlib
 from typing import Optional
 
 import torch
@@ -172,16 +173,20 @@ def render_row(prompts: list[str],
 
 
 def merge_models(model_a_repo_id_or_path: str, model_b_repo_id_or_path: str, model_c_repo_id_or_path: Optional[str],
-                 alpha=0.5, algorithm: Optional[str] = None, merge_block_weights_config: Optional[dict] = None,
+                 alpha=0.5, algorithm: Optional[str] = None, unet_block_weights: Optional[list[float]] = None,
                  local_files_only: bool = False) \
         -> StableDiffusionPipeline:
     """
     Merge the two or three given models using the given alpha (for two models: 0.0=100% model a, 1.0=100% model b)
     """
 
+    custom_pipeline = ("checkpoint_merger"
+                       if unet_block_weights is None
+                       else os.path.join(pathlib.Path(__file__).parent.resolve(), "checkpoint_merger_mbw.py")
+                       )
     pipe = StableDiffusionPipeline.from_pretrained(model_a_repo_id_or_path, local_files_only=local_files_only,
                                                    #custom_pipeline="./checkpoint_merger.py")
-                                                    custom_pipeline = "checkpoint_merger")
+                                                    custom_pipeline = custom_pipeline)
 
     if algorithm is None:
         algorithm = 'add_diff' if model_c_repo_id_or_path is not None else 'weighted_sum'
@@ -198,7 +203,7 @@ def merge_models(model_a_repo_id_or_path: str, model_b_repo_id_or_path: str, mod
         models.append(model_c_repo_id_or_path)
     merged_pipe = pipe.merge(models, local_files_only=local_files_only, interp=algorithm,
                              alpha=alpha, force=force,
-                             merge_block_weights_config=merge_block_weights_config)
+                             block_weights=unet_block_weights)
     del pipe
 
     return merged_pipe
@@ -229,9 +234,14 @@ def render_all(prompts: list[str], negative_prompts: Optional[list[str]], seeds:
 
         merge_alphas = merge_config['alphas']
         merge_algorithm = merge_config.get('algorithm', None) or 'weighted_sum'
-        merge_block_weights_config = merge_config.get('block weights', None)
+        unet_block_weights_str = merge_config.get('block_weights', None)
+        unet_block_weights = None if unet_block_weights_str is None else [float(f) for f in unet_block_weights_str.split(',')]
         if type(merge_algorithm) is list and len(merge_algorithm) != len(merge_alphas):
-            print("wrong number of values in merge config for `algorithm` - should be either a single string or an array of strings with the same length as `alphas`")
+            raise ValueError("wrong number of values in merge config for `algorithm` - should be either a single string or an array of strings with the same length as `alphas`")
+        if unet_block_weights is not None and len(unet_block_weights) != 25:
+            raise ValueError(f"Wrong number of unet block weights. There must be 25, eg \"0.0,0.04,0.08,0.12,0.16,"
+                             f"0.2,0.24,0.28,0.32,0.36,0.4,0.44,0.48,0.52,0.56,0.6,0.64,0.68,0.72,0.76,0.8,0.84,0.88,"
+                             f"0.92,0.96\". You have specified \"{unet_block_weights}\", which is not valid.")
 
         for i, alpha in enumerate(tqdm(merge_alphas)):
             this_model_label = f"{merge_algorithm} merge of {repo_ids_or_paths} with alpha {alpha}"
@@ -240,7 +250,7 @@ def render_all(prompts: list[str], negative_prompts: Optional[list[str]], seeds:
             model_c = repo_ids_or_paths[2] if len(repo_ids_or_paths) == 3 else None
             algorithm = merge_algorithm if type(merge_algorithm) is str else merge_algorithm[i]
             pipeline = merge_models(repo_ids_or_paths[0], repo_ids_or_paths[1], model_c, alpha=alpha,
-                                    algorithm=algorithm, merge_block_weights_config=merge_block_weights_config,
+                                    algorithm=algorithm, unet_block_weights=unet_block_weights,
                                     local_files_only=local_files_only)
             row_images = render_row(prompts,
                                     negative_prompts=negative_prompts,
@@ -314,20 +324,6 @@ if __name__ == '__main__':
                         type=int,
                         default=512,
                         help="individual image height")
-    parser.add_argument("--merge_config",
-                        required=False,
-                        type=str,
-                        help="(Optional) If set, path to a JSON file containing merge options (which can be partially overridden by the --merge_alphas and --merge_algorithm options)")
-    parser.add_argument("--merge_alphas",
-                        required=False,
-                        type=float,
-                        nargs="+",
-                        help="(Optional) If set, --repo_ids_or_paths must specify either 2 or 3 models, which will be merged using the given alphas and used in place of multiple models.")
-    parser.add_argument("--merge_algorithm",
-                        required=False,
-                        type=str,
-                        default=None,
-                        help="(Optional) If doing merges, the algorithm to use - one of 'weighted_sum', 'sigmoid', 'inv_sigmoid', or 'add_diff'. 'add_diff' only works for 3-way merge.")
     parser.add_argument("--negative_prompts",
                         required=False,
                         type=str,
@@ -347,6 +343,20 @@ if __name__ == '__main__':
                         required=False,
                         action='store_true',
                         help="Use only local data (do not attempt to download or update models)")
+    parser.add_argument("--merge_alphas",
+                        required=False,
+                        type=float,
+                        nargs="+",
+                        help="(Optional) If set, --repo_ids_or_paths must specify either 2 or 3 models, which will be merged using the given alphas and used in place of multiple models.")
+    parser.add_argument("--merge_algorithm",
+                        required=False,
+                        type=str,
+                        default=None,
+                        help="(Optional) If doing merges, the algorithm to use - one of 'weighted_sum', 'sigmoid', 'inv_sigmoid', or 'add_diff'. 'add_diff' only works for 3-way merge.")
+    parser.add_argument("--merge_unet_block_weights",
+                        required=False,
+                        type=str,
+                        help="(Optional) A string containing 25 comma-separated floats i.e. \"0.0, 0.0, 0.0, (... 22 more floats)\", to merge each part of the UNet using a different weight ('block-weighted merging').")
     args = parser.parse_args()
 
     if len(args.prompts) == 1 and os.path.isfile(args.prompts[0]):
@@ -372,9 +382,10 @@ if __name__ == '__main__':
         seeds = use_arg_list_or_expand_or_default(args.seeds, len(prompts), [1 + i for i in range(len(prompts))])
 
 
-    merge_config = None if (args.merge_alphas is None and args.merge_algorithm is None) else {
+    merge_config = None if args.merge_alphas is None else {
         'alphas': args.merge_alphas,
-        'algorithm': args.merge_algorithm
+        'algorithm': args.merge_algorithm,
+        'block_weights': args.merge_unet_block_weights,
     }
 
     render_all(prompts=prompts,

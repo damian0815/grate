@@ -1,3 +1,4 @@
+# heavily ada
 # from https://note.com/kohya_ss/n/n9a485a066d5b
 # kohya_ss
 #   original code: https://github.com/eyriewow/merge-models
@@ -14,6 +15,7 @@ NUM_MID_BLOCK = 1
 NUM_OUTPUT_BLOCKS = 12
 NUM_TOTAL_BLOCKS = NUM_INPUT_BLOCKS + NUM_MID_BLOCK + NUM_OUTPUT_BLOCKS
 
+# painstakingly recovered from
 DIFFUSERS_KEY_PREFIX_TO_WEIGHT_INDEX = {
     "time_embedding.": 0,
     "conv_in.": 0,

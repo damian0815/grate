@@ -5,7 +5,7 @@ from typing import Dict, List, Union
 import torch
 
 from diffusers.utils import is_safetensors_available
-
+from tqdm import tqdm
 
 if is_safetensors_available():
     import safetensors.torch
@@ -76,7 +76,7 @@ def dprint(str, flg):
         print(str)
 
 def get_weight_index(key: str) -> int:
-    for k, v in DIFFUSERS_KEY_PREFIX_TO_WEIGHT_INDEX:
+    for k, v in DIFFUSERS_KEY_PREFIX_TO_WEIGHT_INDEX.items():
         if key.startswith(k):
             return v
     raise ValueError(f"Unknown unet key: {key}")
@@ -111,8 +111,7 @@ def merge_diffusers_unets_block_weighted(weights: list,
     dprint(f"-- start merge --", verbose)
 
     for key in (tqdm(theta_0.keys(), desc="Merging...")):
-        weight_index = get_weight_index_diffusers(key)
-        this_block_alpha = weights[weight_index]
+        this_block_alpha = get_block_alpha(block_weights=weights, key=key)
         dprint(f"  key : {key} -> alpha {this_block_alpha}", verbose)
         theta_0[key] = (1 - this_block_alpha) * theta_0[key] + this_block_alpha * theta_1[key]
 
@@ -202,12 +201,12 @@ class CheckpointMergerPipeline(DiffusionPipeline):
 
         alpha = kwargs.pop("alpha", 0.5)
         interp = kwargs.pop("interp", None)
-        block_weights: dict = kwargs.pop("block_weights", None)
+        block_weights: list[float] = kwargs.pop("block_weights", None)
 
         print("Received list", pretrained_model_name_or_path_list)
         print(f"Combining with alpha={alpha}, interpolation mode={interp}")
         if block_weights is not None:
-            print(f" - Merging unet using block weights {block_weights}")
+            print(f"Merging unet using block weights {block_weights}")
 
         checkpoint_count = len(pretrained_model_name_or_path_list)
         # Ignore result from model_index_json comparision of the two checkpoints
@@ -325,7 +324,7 @@ class CheckpointMergerPipeline(DiffusionPipeline):
                 # For an attr if both checkpoint_path_1 and 2 are None, ignore.
                 # If atleast one is present, deal with it according to interp method, of course only if the state_dict keys match.
                 if checkpoint_path_1 is None and checkpoint_path_2 is None:
-                    print(f"Skipping {attr}: not present in 2nd or 3d model")
+                    print(f"Skipping {attr}: not present in 2nd or 3rd model")
                     continue
                 try:
                     module = getattr(final_pipe, attr)
