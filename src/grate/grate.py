@@ -9,7 +9,7 @@ from diffusers.pipelines.stable_diffusion import StableDiffusionPipelineOutput
 from diffusers.utils import is_xformers_available
 from tqdm import tqdm
 
-from convert_original_stable_diffusion_to_diffusers import load_pipeline_from_original_stable_diffusion_ckpt
+from .convert_original_stable_diffusion_to_diffusers import load_pipeline_from_original_stable_diffusion_ckpt
 
 # get_wrapped_text adapted from https://stackoverflow.com/a/67203353
 def get_wrapped_text(text: str, font: ImageFont.ImageFont,
