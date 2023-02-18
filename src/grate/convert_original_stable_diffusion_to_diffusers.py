@@ -15,6 +15,7 @@
 """ Conversion script for the LDM checkpoints. """
 
 import argparse
+import json
 import os
 import re
 
@@ -149,7 +150,7 @@ def renew_vae_attention_paths(old_list, n_shave_prefix_segments=0):
 
 
 def assign_to_checkpoint(
-    paths, checkpoint, old_checkpoint, attention_paths_to_split=None, additional_replacements=None, config=None
+    paths, checkpoint, old_checkpoint, key_mapping: dict[str, str], attention_paths_to_split=None, additional_replacements=None, config=None
 ):
     """
     This does the final conversion step: take locally converted weights and apply a global renaming
@@ -198,6 +199,7 @@ def assign_to_checkpoint(
             checkpoint[new_path] = old_checkpoint[path["old"]][:, :, 0]
         else:
             checkpoint[new_path] = old_checkpoint[path["old"]]
+        key_mapping[new_path] = path["old"]
 
 
 def conv_attn_to_linear(checkpoint):
@@ -314,6 +316,7 @@ def convert_ldm_unet_checkpoint(checkpoint, config, path=None, extract_ema=False
     # extract state_dict for UNet
     unet_state_dict = {}
     keys = list(checkpoint.keys())
+    key_mapping = {}
 
     unet_key = "model.diffusion_model."
     # at least a 100 parameters have to start with `model_ema` in order for the checkpoint to be EMA
@@ -339,7 +342,7 @@ def convert_ldm_unet_checkpoint(checkpoint, config, path=None, extract_ema=False
                 unet_state_dict[key.replace(unet_key, "")] = checkpoint.pop(key)
 
     new_checkpoint = {}
-
+    
     new_checkpoint["time_embedding.linear_1.weight"] = unet_state_dict["time_embed.0.weight"]
     new_checkpoint["time_embedding.linear_1.bias"] = unet_state_dict["time_embed.0.bias"]
     new_checkpoint["time_embedding.linear_2.weight"] = unet_state_dict["time_embed.2.weight"]
@@ -352,6 +355,20 @@ def convert_ldm_unet_checkpoint(checkpoint, config, path=None, extract_ema=False
     new_checkpoint["conv_norm_out.bias"] = unet_state_dict["out.0.bias"]
     new_checkpoint["conv_out.weight"] = unet_state_dict["out.2.weight"]
     new_checkpoint["conv_out.bias"] = unet_state_dict["out.2.bias"]
+
+
+    key_mapping["time_embedding.linear_1.weight"] = "time_embed.0.weight"
+    key_mapping["time_embedding.linear_1.bias"] = "time_embed.0.bias"
+    key_mapping["time_embedding.linear_2.weight"] = "time_embed.2.weight"
+    key_mapping["time_embedding.linear_2.bias"] = "time_embed.2.bias"
+
+    key_mapping["conv_in.weight"] = "input_blocks.0.0.weight"
+    key_mapping["conv_in.bias"] = "input_blocks.0.0.bias"
+
+    key_mapping["conv_norm_out.weight"] = "out.0.weight"
+    key_mapping["conv_norm_out.bias"] = "out.0.bias"
+    key_mapping["conv_out.weight"] = "out.2.weight"
+    key_mapping["conv_out.bias"] = "out.2.bias"
 
     # Retrieves the keys for the input blocks only
     num_input_blocks = len({".".join(layer.split(".")[:2]) for layer in unet_state_dict if "input_blocks" in layer})
@@ -387,21 +404,23 @@ def convert_ldm_unet_checkpoint(checkpoint, config, path=None, extract_ema=False
             new_checkpoint[f"down_blocks.{block_id}.downsamplers.0.conv.weight"] = unet_state_dict.pop(
                 f"input_blocks.{i}.0.op.weight"
             )
+            key_mapping[f"down_blocks.{block_id}.downsamplers.0.conv.weight"] = f"input_blocks.{i}.0.op.weight"
             new_checkpoint[f"down_blocks.{block_id}.downsamplers.0.conv.bias"] = unet_state_dict.pop(
                 f"input_blocks.{i}.0.op.bias"
             )
+            key_mapping[f"down_blocks.{block_id}.downsamplers.0.conv.bias"] = f"input_blocks.{i}.0.op.bias"
 
         paths = renew_resnet_paths(resnets)
         meta_path = {"old": f"input_blocks.{i}.0", "new": f"down_blocks.{block_id}.resnets.{layer_in_block_id}"}
         assign_to_checkpoint(
-            paths, new_checkpoint, unet_state_dict, additional_replacements=[meta_path], config=config
+            paths, new_checkpoint, unet_state_dict, key_mapping=key_mapping, additional_replacements=[meta_path], config=config
         )
 
         if len(attentions):
             paths = renew_attention_paths(attentions)
             meta_path = {"old": f"input_blocks.{i}.1", "new": f"down_blocks.{block_id}.attentions.{layer_in_block_id}"}
             assign_to_checkpoint(
-                paths, new_checkpoint, unet_state_dict, additional_replacements=[meta_path], config=config
+                paths, new_checkpoint, unet_state_dict, key_mapping=key_mapping, additional_replacements=[meta_path], config=config
             )
 
     resnet_0 = middle_blocks[0]
@@ -409,15 +428,15 @@ def convert_ldm_unet_checkpoint(checkpoint, config, path=None, extract_ema=False
     resnet_1 = middle_blocks[2]
 
     resnet_0_paths = renew_resnet_paths(resnet_0)
-    assign_to_checkpoint(resnet_0_paths, new_checkpoint, unet_state_dict, config=config)
+    assign_to_checkpoint(resnet_0_paths, new_checkpoint, unet_state_dict, key_mapping=key_mapping, config=config)
 
     resnet_1_paths = renew_resnet_paths(resnet_1)
-    assign_to_checkpoint(resnet_1_paths, new_checkpoint, unet_state_dict, config=config)
+    assign_to_checkpoint(resnet_1_paths, new_checkpoint, unet_state_dict, key_mapping=key_mapping, config=config)
 
     attentions_paths = renew_attention_paths(attentions)
     meta_path = {"old": "middle_block.1", "new": "mid_block.attentions.0"}
     assign_to_checkpoint(
-        attentions_paths, new_checkpoint, unet_state_dict, additional_replacements=[meta_path], config=config
+        attentions_paths, new_checkpoint, unet_state_dict, key_mapping=key_mapping, additional_replacements=[meta_path], config=config
     )
 
     for i in range(num_output_blocks):
@@ -442,7 +461,7 @@ def convert_ldm_unet_checkpoint(checkpoint, config, path=None, extract_ema=False
 
             meta_path = {"old": f"output_blocks.{i}.0", "new": f"up_blocks.{block_id}.resnets.{layer_in_block_id}"}
             assign_to_checkpoint(
-                paths, new_checkpoint, unet_state_dict, additional_replacements=[meta_path], config=config
+                paths, new_checkpoint, unet_state_dict, key_mapping=key_mapping, additional_replacements=[meta_path], config=config
             )
 
             output_block_list = {k: sorted(v) for k, v in output_block_list.items()}
@@ -451,10 +470,11 @@ def convert_ldm_unet_checkpoint(checkpoint, config, path=None, extract_ema=False
                 new_checkpoint[f"up_blocks.{block_id}.upsamplers.0.conv.weight"] = unet_state_dict[
                     f"output_blocks.{i}.{index}.conv.weight"
                 ]
+                key_mapping[f"up_blocks.{block_id}.upsamplers.0.conv.weight"] = f"output_blocks.{i}.{index}.conv.weight"
                 new_checkpoint[f"up_blocks.{block_id}.upsamplers.0.conv.bias"] = unet_state_dict[
                     f"output_blocks.{i}.{index}.conv.bias"
                 ]
-
+                key_mapping[f"up_blocks.{block_id}.upsamplers.0.conv.bias"] = f"output_blocks.{i}.{index}.conv.bias"
                 # Clear attentions as they have been attributed above.
                 if len(attentions) == 2:
                     attentions = []
@@ -466,15 +486,18 @@ def convert_ldm_unet_checkpoint(checkpoint, config, path=None, extract_ema=False
                     "new": f"up_blocks.{block_id}.attentions.{layer_in_block_id}",
                 }
                 assign_to_checkpoint(
-                    paths, new_checkpoint, unet_state_dict, additional_replacements=[meta_path], config=config
+                    paths, new_checkpoint, unet_state_dict, key_mapping=key_mapping, additional_replacements=[meta_path], config=config
                 )
         else:
             resnet_0_paths = renew_resnet_paths(output_block_layers, n_shave_prefix_segments=1)
             for path in resnet_0_paths:
                 old_path = ".".join(["output_blocks", str(i), path["old"]])
                 new_path = ".".join(["up_blocks", str(block_id), "resnets", str(layer_in_block_id), path["new"]])
-
                 new_checkpoint[new_path] = unet_state_dict[old_path]
+                key_mapping[new_path] = old_path
+
+    key_mapping = {unet_key+v: k for k, v in key_mapping.items()}
+    print(json.dumps(key_mapping))
 
     return new_checkpoint
 

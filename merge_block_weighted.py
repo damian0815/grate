@@ -9,8 +9,10 @@
 import os
 import argparse
 import re
+from collections import defaultdict
+
 import torch
-from diffusers import StableDiffusionPipeline
+from diffusers import StableDiffusionPipeline, UNet2DConditionModel
 from diffusers.utils.import_utils import BACKENDS_MAPPING
 from tqdm import tqdm
 
@@ -21,150 +23,126 @@ NUM_MID_BLOCK = 1
 NUM_OUTPUT_BLOCKS = 12
 NUM_TOTAL_BLOCKS = NUM_INPUT_BLOCKS + NUM_MID_BLOCK + NUM_OUTPUT_BLOCKS
 
-KEY_POSITION_IDS = "cond_stage_model.transformer.text_model.embeddings.position_ids"
+LDM_TO_DIFFUSERS_UNET_KEY_PREFIX_MAP = {
+    "model.diffusion_model.time_embed.": ["time_embedding."],
+    "model.diffusion_model.out.": ["conv_norm_out.", "conv_out."],
+
+    "model.diffusion_model.input_blocks.0.": ["conv_in."],
+    "model.diffusion_model.input_blocks.1.": ["down_blocks.0.resnets.0", "down_blocks.0.attentions.0"],
+    "model.diffusion_model.input_blocks.2.": ["down_blocks.0.resnets.1", "down_blocks.0.attentions.1"],
+    "model.diffusion_model.input_blocks.3.": ["down_blocks.0.downsamplers"],
+    "model.diffusion_model.input_blocks.4.": ["down_blocks.1.resnets.0", "down_blocks.1.attentions.0"],
+    "model.diffusion_model.input_blocks.5.": ["down_blocks.1.resnets.1", "down_blocks.1.attentions.1"],
+    "model.diffusion_model.input_blocks.6.": ["down_blocks.1.downsamplers"],
+    "model.diffusion_model.input_blocks.7.": ["down_blocks.2.resnets.0", "down_blocks.2.attentions.0"],
+    "model.diffusion_model.input_blocks.8.": ["down_blocks.2.resnets.1", "down_blocks.2.attentions.1"],
+    "model.diffusion_model.input_blocks.9.": ["down_blocks.2.downsamplers"],
+    "model.diffusion_model.input_blocks.10.": ["down_blocks.3.resnets.0"],
+    "model.diffusion_model.input_blocks.11.": ["down_blocks.3.resnets.1"],
+
+    "model.diffusion_model.middle_block": ["mid_block"],
+
+    "model.diffusion_model.output_blocks.0.": ["up_blocks.0.resnets.0"],
+    "model.diffusion_model.output_blocks.1.": ["up_blocks.0.resnets.1"],
+    "model.diffusion_model.output_blocks.2.": ["up_blocks.0.resnets.2", "up_blocks.0.upsamplers.0"],
+    "model.diffusion_model.output_blocks.3.": ["up_blocks.1.resnets.0", "up_blocks.1.attentions.0"],
+    "model.diffusion_model.output_blocks.4.": ["up_blocks.1.resnets.1", "up_blocks.1.attentions.1"],
+    "model.diffusion_model.output_blocks.5.": ["up_blocks.1.resnets.2", "up_blocks.1.upsamplers.0", "up_blocks.1.attentions.2"],
+    "model.diffusion_model.output_blocks.6.": ["up_blocks.2.resnets.0", "up_blocks.2.attentions.0"],
+    "model.diffusion_model.output_blocks.7.": ["up_blocks.2.resnets.1", "up_blocks.2.attentions.1"],
+    "model.diffusion_model.output_blocks.8.": ["up_blocks.2.resnets.2", "up_blocks.2.upsamplers.0", "up_blocks.2.attentions.2"],
+    "model.diffusion_model.output_blocks.9.": ["up_blocks.3.resnets.0", "up_blocks.3.attentions.0"],
+    "model.diffusion_model.output_blocks.10.": ["up_blocks.3.resnets.1", "up_blocks.3.attentions.1"],
+    "model.diffusion_model.output_blocks.11.": ["up_blocks.3.resnets.2", "up_blocks.3.attentions.2"],
+}
+
+LDM_PREFIX_TO_WEIGHT_INDEX = {
+    "model.diffusion_model.time_embed.": 0,
+    "model.diffusion_model.out.": NUM_TOTAL_BLOCKS - 1,
+
+    "model.diffusion_model.input_blocks.0.": 0,
+    "model.diffusion_model.input_blocks.1.": 1,
+    "model.diffusion_model.input_blocks.2.": 2,
+    "model.diffusion_model.input_blocks.3.": 3,
+    "model.diffusion_model.input_blocks.4.": 4,
+    "model.diffusion_model.input_blocks.5.": 5,
+    "model.diffusion_model.input_blocks.6.": 6,
+    "model.diffusion_model.input_blocks.7.": 7,
+    "model.diffusion_model.input_blocks.8.": 8,
+    "model.diffusion_model.input_blocks.9.": 9,
+    "model.diffusion_model.input_blocks.10.": 10,
+    "model.diffusion_model.input_blocks.11.": 11,
+
+    "model.diffusion_model.middle_block": 12,
+
+    "model.diffusion_model.output_blocks.0.": 13,
+    "model.diffusion_model.output_blocks.1.": 14,
+    "model.diffusion_model.output_blocks.2.": 15,
+    "model.diffusion_model.output_blocks.3.": 16,
+    "model.diffusion_model.output_blocks.4.": 17,
+    "model.diffusion_model.output_blocks.5.": 18,
+    "model.diffusion_model.output_blocks.6.": 19,
+    "model.diffusion_model.output_blocks.7.": 20,
+    "model.diffusion_model.output_blocks.8.": 21,
+    "model.diffusion_model.output_blocks.9.": 22,
+    "model.diffusion_model.output_blocks.10.": 23,
+    "model.diffusion_model.output_blocks.11.": 24
+}
 
 def dprint(str, flg):
     if flg:
         print(str)
 
+def get_weight_index_ldm(key: str) -> int:
+    for k, v in LDM_PREFIX_TO_WEIGHT_INDEX:
+        if key.startswith(k):
+            return v
+    raise ValueError(f"Unknown LDM key: {key}")
 
 
-def merge_block_weighted_diffusers(weights: list,
-                         model_0: StableDiffusionPipeline | dict,
-                         model_1: StableDiffusionPipeline | dict,
-                         base_alpha=0.5, verbose=False,
-                         skip_position_ids=0):
+def get_weight_index_diffusers(key: str) -> int:
+    for ldm_prefix, diffusers_prefixes in LDM_TO_DIFFUSERS_UNET_KEY_PREFIX_MAP:
+        matching = next((p for p in diffusers_prefixes if key.startswith(p)), None)
+        if matching is not None:
+            return get_weight_index_ldm(ldm_prefix)
+    raise ValueError(f"Unknown diffusers key: {key}")
 
-    if type(model_0) is StableDiffusionPipeline:
-        model_0 = load_ldm_ckpt_from_diffusers_dicts(unet_state_dict=model_0.unet.state_dict(),
-                                                     vae_state_dict=model_0.vae.state_dict(),
-                                                     text_enc_dict=model_0.text_encoder.state_dict())
-    if type(model_1) is StableDiffusionPipeline:
-        model_1 = load_ldm_ckpt_from_diffusers_dicts(unet_state_dict=model_1.unet.state_dict(),
-                                                     vae_state_dict=model_1.vae.state_dict(),
-                                                     text_enc_dict=model_1.text_encoder.state_dict())
+
+
+def merge_unets_block_weighted(weights: list,
+                               unet_0: UNet2DConditionModel,
+                               unet_1: UNet2DConditionModel,
+                               verbose=False,
+                               ):
+    """
+    Merge unet_0 and unet_1 applying a different weight to each level in the unet.
+
+    `weights` is a list of 25 floats:
+        12 for the unet down-blocks,
+        1 for the middle block,
+        12 for the unet up-blocks.
+    Each weight is 0..1 where 0 means use unet_0's value and 1 means use unet_1's value.
+    """
 
     if len(weights) != NUM_TOTAL_BLOCKS:
         _err_msg = f"weights value must be {NUM_TOTAL_BLOCKS}."
         print(_err_msg)
         return False, _err_msg
 
-    theta_0 = model_0
-    theta_1 = model_1
-
-    alpha = base_alpha
-
-    re_inp = re.compile(r'\.input_blocks\.(\d+)\.')  # 12
-    re_mid = re.compile(r'\.middle_block\.(\d+)\.')  # 1
-    re_out = re.compile(r'\.output_blocks\.(\d+)\.') # 12
+    theta_0 = unet_0.state_dict()
+    theta_1 = unet_1.state_dict()
 
     print("  merging ...")
     dprint(f"-- start Stage 1/2 --", verbose)
-    count_target_of_basealpha = 0
+
     for key in (tqdm(theta_0.keys(), desc="Stage 1/2")):
-        if "model" in key and key in theta_1:
+        weight_index = get_weight_index_diffusers(key)
+        this_block_alpha = weights[weight_index]
+        dprint(f"  key : {key} -> alpha {this_block_alpha}", verbose)
+        theta_0[key] = (1 - this_block_alpha) * theta_0[key] + this_block_alpha * theta_1[key]
 
-            if KEY_POSITION_IDS in key:
-                print(key)
-                if skip_position_ids == 1:
-                    print(f"  modelA: skip 'position_ids' : dtype:{theta_0[KEY_POSITION_IDS].dtype}")
-                    dprint(f"{theta_0[KEY_POSITION_IDS]}", verbose)
-                    continue
-                elif skip_position_ids == 2:
-                    theta_0[key] = torch.tensor([list(range(77))], dtype=torch.int64)
-                    print(f"  modelA: reset 'position_ids': dtype:{theta_0[KEY_POSITION_IDS].dtype}")
-                    dprint(f"{theta_0[KEY_POSITION_IDS]}", verbose)
-                    continue
-                else:
-                    print(f"  modelA: 'position_ids' key found. do nothing : {skip_position_ids}: dtype:{theta_0[KEY_POSITION_IDS].dtype}")
-
-            dprint(f"  key : {key}", verbose)
-            current_alpha = alpha
-
-            # check weighted and U-Net or not
-            if weights is not None and 'model.diffusion_model.' in key:
-                # check block index
-                weight_index = -1
-
-                if 'time_embed' in key:
-                    weight_index = 0                # before input blocks
-                elif '.out.' in key:
-                    weight_index = NUM_TOTAL_BLOCKS - 1     # after output blocks
-                else:
-                    m = re_inp.search(key)
-                    if m:
-                        inp_idx = int(m.groups()[0])
-                        weight_index = inp_idx
-                    else:
-                        m = re_mid.search(key)
-                        if m:
-                            weight_index = NUM_INPUT_BLOCKS
-                        else:
-                            m = re_out.search(key)
-                            if m:
-                                out_idx = int(m.groups()[0])
-                                weight_index = NUM_INPUT_BLOCKS + NUM_MID_BLOCK + out_idx
-
-                if weight_index >= NUM_TOTAL_BLOCKS:
-                    print(f"error. illegal block index: {key}")
-                    return False, ""
-                if weight_index >= 0:
-                    current_alpha = weights[weight_index]
-                    dprint(f"weighted '{key}': {current_alpha}", verbose)
-            else:
-                count_target_of_basealpha = count_target_of_basealpha + 1
-                dprint(f"base_alpha applied: [{key}]", verbose)
-
-            theta_0[key] = (1 - current_alpha) * theta_0[key] + current_alpha * theta_1[key]
-
-        else:
-            dprint(f"  key - {key}", verbose)
-
-    dprint(f"-- start Stage 2/2 --", verbose)
-    for key in tqdm(theta_1.keys(), desc="Stage 2/2"):
-        if "model" in key and key not in theta_0:
-
-            if KEY_POSITION_IDS in key:
-                if skip_position_ids == 1:
-                    print(f"  modelB: skip 'position_ids' : {theta_0[KEY_POSITION_IDS].dtype}")
-                    dprint(f"{theta_0[KEY_POSITION_IDS]}", verbose)
-                    continue
-                elif skip_position_ids == 2:
-                    theta_0[key] = torch.tensor([list(range(77))], dtype=torch.int64)
-                    print(f"  modelB: reset 'position_ids': {theta_0[KEY_POSITION_IDS].dtype}")
-                    dprint(f"{theta_0[KEY_POSITION_IDS]}", verbose)
-                    continue
-                else:
-                    print(f"  modelB: 'position_ids' key found. do nothing : {skip_position_ids}")
-
-            dprint(f"  key : {key}", verbose)
-            theta_0.update({key:theta_1[key]})
-
-        else:
-            dprint(f"  key - {key}", verbose)
-
-    return theta_0
-
-
-
-def load_original_stable_diffusion_state_dict(path) -> dict:
-    device = "cpu"
-    if os.path.splitext(path)[1].lower() == '.safetensors':
-        if not is_safetensors_available():
-            raise ValueError(BACKENDS_MAPPING["safetensors"][1])
-        from safetensors import safe_open
-
-        checkpoint = {}
-        with safe_open(path, framework="pt", device=device) as f:
-            for key in f.keys():
-                checkpoint[key] = f.get_tensor(key)
-    else:
-        checkpoint = torch.load(path, map_location=device)
-
-    if "state_dict" in checkpoint:
-        checkpoint = checkpoint["state_dict"]
-
-    return checkpoint
+    unet_0.load_state_dict(theta_0)
+    return unet_0
 
 
 if __name__ == '__main__':
@@ -188,6 +166,7 @@ if __name__ == '__main__':
         model_0 = load_original_stable_diffusion_state_dict(args.model_0_path)
     else:
         model_0 = StableDiffusionPipeline.from_pretrained(args.model_0_path)
+
     print(f"loading {args.model_1_path}...")
     if os.path.isfile(args.model_1_path):
         model_1 = load_original_stable_diffusion_state_dict(args.model_1_path)
