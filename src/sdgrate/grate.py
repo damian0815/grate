@@ -358,26 +358,26 @@ if __name__ == '__main__':
                              "--repo_ids_or_paths \"stablityai/stable-diffusion-2-1\" \"../models/v1-5-pruned-emaonly.ckpt\"")
     parser.add_argument("--output_path",
                         required=True,
-                        help="where to save the resulting image")
+                        help="Where to save the resulting image. Also saves partial images here as each row is finished rendering.")
     parser.add_argument("--device",
                         required=False,
                         default=None,
-                        help="device to use, eg 'cuda', 'mps', 'cpu'. if omitted, will try to pick the best device.")
+                        help="(Optional) Device to use, eg 'cuda', 'mps', 'cpu'. if omitted, will try to pick the best device.")
     parser.add_argument("--batch_size",
                         required=False,
                         type=int,
                         default=1,
-                        help="batch size, default 1")
+                        help="(Optional) Batch size, default 1")
     parser.add_argument("--width",
                         required=False,
                         default=512,
                         type=int,
-                        help="individual image width")
+                        help="(Optional) Individual image width")
     parser.add_argument("--height",
                         required=False,
                         type=int,
                         default=512,
-                        help="individual image height")
+                        help="(Optional) Individual image height")
     parser.add_argument("--negative_prompts",
                         required=False,
                         type=str,
@@ -396,7 +396,7 @@ if __name__ == '__main__':
     parser.add_argument("--local_files_only",
                         required=False,
                         action='store_true',
-                        help="Use only local data (do not attempt to download or update models)")
+                        help="(Optional) Use only local data (do not attempt to download or update models)")
     parser.add_argument("--merge_alphas",
                         required=False,
                         type=float,
@@ -407,22 +407,22 @@ if __name__ == '__main__':
                         type=str,
                         default=None,
                         nargs="+",
-                        help="(Optional) If doing merges, the algorithm to use - one of 'weighted_sum', 'sigmoid', 'inv_sigmoid', or 'add_diff'. 'add_diff' only works for 3-way merge. Specify either 1 time or the same number of times as there are merge_alphas.")
+                        help="(Optional) If doing merges, the algorithm to use - one of 'weighted_sum', 'sigmoid', 'inv_sigmoid', or 'add_diff'. 'add_diff' only works for 3-way merge. Specify either 1 algorithm to use for all rows, or the same number of algorithms as there are merge_alphas.")
     parser.add_argument("--merge_unet_block_weights",
                         required=False,
                         type=str,
                         nargs="+",
-                        help="(Optional) 25 comma-separated floats i.e. \"0.0, 0.0, 0.0, (... 22 more floats)\", to merge each part of the UNet using a different weight ('block-weighted merging'). Specify either 1 time or the same number of times as there are merge_alphas.")
+                        help="(Optional) 25 comma-separated floats specified as strings, eg \"0.0, 0.0, 0.0, (... 22 more floats)\", to merge each part of the UNet using a different weight ('block-weighted merging'). Specify either 1 list to use for all rows, or the same number of lists as there are merge_alphas.")
     parser.add_argument("--merge_unet_alpha",
                         required=False,
                         type=float,
                         nargs="+",
-                        help="(Optional) Override the merge alpha with a unet-specific alpha. Specify either 1 time or the same number of times as there are merge_alphas.")
+                        help="(Optional) Override the merge alpha with a unet-specific alpha. Specify either 1 alpha to use for all rows, or the same number of alphas as there are merge_alphas.")
     parser.add_argument("--merge_text_encoder_alpha",
                         required=False,
                         type=float,
                         nargs="+",
-                        help="(Optional) Override the merge alpha with a text-encoder-specific alpha. Specify either 1 time or the same number of times as there are merge_alphas.")
+                        help="(Optional) Override the merge alpha with a text-encoder-specific alpha. Specify either 1 alpha to use for all rows, or the same number of alphas as there are merge_alphas.")
     args = parser.parse_args()
 
 
