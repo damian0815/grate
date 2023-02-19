@@ -247,8 +247,11 @@ def merge_models(model_a_repo_id_or_path: str, model_b_repo_id_or_path: str, mod
 def render_all(prompts: list[str], negative_prompts: Optional[list[str]], seeds: list[int], cfg: float,
                repo_ids_or_paths: list[str],
                device: str,
-               size: tuple[int, int], batch_size: int,
-                save_partial_filename: str = None, local_files_only: bool=False,
+               size: tuple[int, int],
+               batch_size: int,
+               inference_steps: int = 15,
+               save_partial_filename: str = None,
+               local_files_only: bool = False,
                merge_config: Optional[dict] = None
                ) -> Image:
     all_images = []
@@ -313,6 +316,7 @@ def render_all(prompts: list[str], negative_prompts: Optional[list[str]], seeds:
                                     device=device,
                                     batch_size=batch_size,
                                     cfg=cfg,
+                                    num_inference_steps=inference_steps,
                                     sample_w=size[0], sample_h=size[1])
             all_images += row_images
             save_partial_if_requested()
@@ -329,6 +333,7 @@ def render_all(prompts: list[str], negative_prompts: Optional[list[str]], seeds:
                                     device=device,
                                     batch_size=batch_size,
                                     cfg=cfg,
+                                    num_inference_steps=inference_steps,
                                     sample_w=size[0], sample_h=size[1])
             all_images += row_images
             save_partial_if_requested()
@@ -393,6 +398,11 @@ def main():
                         type=float,
                         default=7.5,
                         help="(Optional, default=7.5) CFG scale.")
+    parser.add_argument("--steps",
+                        required=False,
+                        type=int,
+                        default=15,
+                        help="(Optional, default=15) How many inference steps to run")
     parser.add_argument("--local_files_only",
                         required=False,
                         action='store_true',
@@ -468,6 +478,7 @@ def main():
                size=(args.width, args.height),
                batch_size=args.batch_size,
                cfg=args.cfg,
+               inference_steps=args.steps,
                local_files_only=args.local_files_only,
                save_partial_filename=args.output_path)
     print(f"grate saved to {args.output_path}")
