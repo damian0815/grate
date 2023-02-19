@@ -4,7 +4,7 @@ Make a matrix of images by running the same prompt through multiple Stable Diffu
 
 ![Demo output of a grid of prompts rendered with three different stable diffusion models](grate-demo.png)
 
-Supports huggingface repo ids, local CompVis-style `.ckpt` files, and paths to local folder hierarchies containing diffusers-format models. Currently using DDPM++2 sampler at 15 steps.
+Supports huggingface repo ids, local CompVis-style `.ckpt` files, and paths to local folder hierarchies containing diffusers-format models. Uses DDPM++2 sampler with 15 steps for all generations.
 
 The above image was rendered using the following commandline on an empty runpod instance:
 
@@ -25,13 +25,13 @@ python3 grate.py \
 
 Supports numerous merge methods.
 
-* Basic merges between two models `a` and `b`, using `weighted_sum`, `sigmoid`, or `inv_sigmoid` weighting with `alpha=0` means use only model `a`, and `alpha=1` means use only model `b`. eg: 
+* Basic merges between two models `a` and `b`, using `weighted_sum`, `sigmoid`, or `inv_sigmoid` weighting, with a given alpha (`alpha=0` means use only model `a`, and `alpha=1` means use only model `b`). For example: 
     ```commandline
     grate --prompts "a cat" "a dog" \
         --repo_ids_or_paths stabilityai/stable-diffusion-2-1 IlluminatiAI/Illuminati_Diffusion_v1.0 \
         --merge_alphas 0.2 0.5 0.8
     ```
-  will produce a grid of 3 rows, 2 columns showing "a cat" and "a dog" rendered using merges between `stabilityai/stable-diffusion-2-1` and `IlluminatiAI/Illuminati_Diffusion_v1.0` at alphas 0.2, 0.5, and 0.8.
+  This will produce a grid with 3 rows of 2 columns showing the prompts "a cat" and "a dog" rendered using merges between `stabilityai/stable-diffusion-2-1` and `IlluminatiAI/Illuminati_Diffusion_v1.0` at alphas 0.2, 0.5, and 0.8.
   
 * Three-way merge by adding the difference between models `b` and `c` to `a` (`--merge_algorithm add_diff`).
 * Merges using a different weight for the unet and text_encoder modules (`--merge_unet_alpha` and `--merge_text_encoder_alpha`).
