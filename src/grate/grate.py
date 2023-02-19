@@ -17,48 +17,80 @@ from huggingface_hub import list_repo_refs
 
 
 # get_wrapped_text adapted from https://stackoverflow.com/a/67203353
-def get_wrapped_text(text: str, font: ImageFont.ImageFont,
-                     line_length: int):
-    lines = []
-    words = text.split()
-    current_line = None
-    while len(words) > 0:
-        next_word = words.pop(0)
-        current_line_with_next_word = next_word if current_line is None else f'{current_line} {next_word}'
-        if font.getlength(current_line_with_next_word) <= line_length:
-            current_line = current_line_with_next_word
-        else:
-            # break here
-            if current_line is not None:
-                lines.append(current_line)
-                words.insert(0, next_word)
-                current_line = None
+def get_wrapped_text(text: str, font: ImageFont,
+                     line_width: int,
+                     max_height: int=None,
+                     max_fontsize_reduction_iterations=3) -> tuple[list[str], int|None]:
+    """
+    Wrap `text` so that when it is drawn using `font` it can fit horizontally within the given
+    `line_width` pixels.
+
+    If `max_height` is not None, attempt to reduce the font size at most
+    `max_fontsize_reduction_iterations` times until it fits in the requested height.
+
+    Returns a list of lines, and a reduced font size or None if no font size reduction
+    was calculated.
+    """
+
+    remaining_fontsize_reduction_iterations = max_fontsize_reduction_iterations + 1
+    reduced_font_size = None
+    while True:
+        lines = []
+        words = text.split()
+        current_line = None
+        while len(words) > 0:
+            next_word = words.pop(0)
+            current_line_with_next_word = (next_word
+                                           if current_line is None
+                                           else f'{current_line} {next_word}')
+            if font.getlength(current_line_with_next_word) <= line_width:
+                current_line = current_line_with_next_word
             else:
-                # single word is too long, need to truncate
-                truncated_word = next_word
-                while len(truncated_word) > 0 and font.getlength(truncated_word) > line_length:
-                    truncated_word = truncated_word[:-1]
-                if len(truncated_word) > 0:
-                    lines.append(truncated_word)
-                    words.insert(0, next_word[len(truncated_word):])
+                # break here
+                if current_line is not None:
+                    lines.append(current_line)
+                    words.insert(0, next_word)
+                    current_line = None
                 else:
-                    # give up
-                    lines.append(next_word)
-    if current_line is not None:
-        lines.append(current_line)
-    return lines
+                    # single word is too long, need to truncate
+                    truncated_word = next_word
+                    while len(truncated_word) > 0 and font.getlength(truncated_word) > line_width:
+                        truncated_word = truncated_word[:-1]
+                    if len(truncated_word) > 0:
+                        lines.append(truncated_word)
+                        words.insert(0, next_word[len(truncated_word):])
+                    else:
+                        # give up
+                        lines.append(next_word)
+        if current_line is not None:
+            lines.append(current_line)
+        bbox = font.getbbox(lines) # (left, top, right, bottom)
+        if max_height is None or remaining_fontsize_reduction_iterations <= 0 or abs(bbox[3]-bbox[1]) <= max_height:
+            # fits in box, or we shouldn't try again
+            break
+        # reduce font to 75% of current size and try again
+        reduced_font_size = round(font.size*0.75)
+        font = ImageFont.truetype(font.path, reduced_font_size)
+        remaining_fontsize_reduction_iterations -= 1
+
+    return lines, reduced_font_size
 
 
 def make_label_image(label: str, font: ImageFont, width: int, height: int, margins=None):
     if margins is None:
         margins = [10, 10, 10, 10]
     line_spacing = 5  # pixels between lines
-    wrapped_text = '\n'.join(get_wrapped_text(label, font, line_length=width - (margins[0] + margins[2])))
+    wrapped_lines_list, reduced_font_size_or_none = get_wrapped_text(label,
+                                                                     font,
+                                                                     line_width=width - (margins[0] + margins[2]),
+                                                                     max_height=height)
+    wrapped_text = '\n'.join(wrapped_lines_list)
+    possibly_reduced_font = font if reduced_font_size_or_none is None else ImageFont.truetype(font.path, reduced_font_size_or_none)
     label_image = Image.new('RGB', size=(width, height), color=(247, 247, 247))
     draw = ImageDraw.Draw(label_image)
     text_bbox = draw.multiline_textbbox((width / 2, 0),
                                         text=wrapped_text,
-                                        font=font,
+                                        font=possibly_reduced_font,
                                         anchor='ma',
                                         spacing=line_spacing,
                                         )  # anchor = horizontal middle, ascender
@@ -87,8 +119,8 @@ def make_image_grid(imgs, num_rows, num_cols, row_labels: list[str], col_labels:
 
     # font = ImageFont.load_default()
     font_path = os.path.join(os.path.dirname(__file__), "LibreBaskerville-DpdE.ttf")
-    col_font = ImageFont.truetype(font_path, size=32)
-    row_font = ImageFont.truetype(font_path, size=48)
+    col_font = ImageFont.truetype(font_path, size=48)
+    row_font = ImageFont.truetype(font_path, size=32)
 
     print(f"compositing {len(imgs)} images...")
 
@@ -183,7 +215,7 @@ def merge_models(model_a_repo_id_or_path: str, model_b_repo_id_or_path: str, mod
     """
 
     custom_pipeline = ("checkpoint_merger"
-                       if unet_block_weights is None
+                       if unet_block_weights is None and per_module_alphas is None
                        else os.path.join(pathlib.Path(__file__).parent.resolve(), "checkpoint_merger_mbw.py")
                        )
     pipe = StableDiffusionPipeline.from_pretrained(model_a_repo_id_or_path, local_files_only=local_files_only,
@@ -236,29 +268,42 @@ def render_all(prompts: list[str], negative_prompts: Optional[list[str]], seeds:
             raise ValueError("Must specify either 2 or 3 models when using merge_alphas")
 
         merge_alphas = merge_config['alphas']
-        merge_algorithm = merge_config.get('algorithm', None) or 'weighted_sum'
-        unet_block_weights_str = merge_config.get('block_weights', None)
-        unet_block_weights = None if unet_block_weights_str is None else [float(f) for f in unet_block_weights_str.split(',')]
 
-        per_module_alphas = {
-            'unet': merge_config.get('unet_alpha', None),
-            'text_encoder': merge_config.get('text_encoder_alpha', None)
-        }
-        if type(merge_algorithm) is list and len(merge_algorithm) != len(merge_alphas):
-            raise ValueError("wrong number of values in merge config for `algorithm` - should be either a single string or an array of strings with the same length as `alphas`")
-        if unet_block_weights is not None and len(unet_block_weights) != 25:
-            raise ValueError(f"Wrong number of unet block weights. There must be 25, eg \"0.0,0.04,0.08,0.12,0.16,"
-                             f"0.2,0.24,0.28,0.32,0.36,0.4,0.44,0.48,0.52,0.56,0.6,0.64,0.68,0.72,0.76,0.8,0.84,0.88,"
-                             f"0.92,0.96\". You have specified \"{unet_block_weights}\", which is not valid.")
+        def get_merge_config_setting(key, index, default):
+            v = merge_config.get(key, None)
+            if v is None:
+                return default
+            if type(v) is list:
+                if len(v) == 1:
+                    return v[0]
+                if len(v) != len(merge_alphas):
+                    raise ValueError(f"Wrong number of values for {key} - expected {len(merge_alphas)}, found {len(v)}")
+                return v[index]
+            return v
 
         for i, alpha in enumerate(tqdm(merge_alphas)):
-            this_model_label = f"{merge_algorithm} merge of {repo_ids_or_paths} with alpha {alpha}"
+
+            merge_algorithm = get_merge_config_setting('algorithm', i, 'weighted_sum')
+            per_module_alphas = {
+                'unet': get_merge_config_setting('unet_alpha', i, None),
+                'text_encoder': get_merge_config_setting('text_encoder_alpha', i, None),
+            }
+            unet_block_weights_str: str|None = get_merge_config_setting('block_weights', i, None)
+            unet_block_weights = None if unet_block_weights_str is None else [float(f) for f in
+                                                                              unet_block_weights_str.split(',')]
+            if unet_block_weights is not None and len(unet_block_weights) != 25:
+                raise ValueError(f"Wrong number of unet block weights. There must be 25, eg \"0.0,0.04,0.08,0.12,0.16,"
+                                 f"0.2,0.24,0.28,0.32,0.36,0.4,0.44,0.48,0.52,0.56,0.6,0.64,0.68,0.72,0.76,0.8,0.84,0.88,"
+                                 f"0.92,0.96\". You have specified \"{unet_block_weights}\", which is not valid.")
+
+            this_model_label = f"{merge_algorithm} merge of {repo_ids_or_paths} with alpha {alpha}, " \
+                               f"per_module_alphas {per_module_alphas}, " \
+                               f"unet_block_weights {unet_block_weights}"
             row_labels.append(this_model_label)
             print(this_model_label)
             model_c = repo_ids_or_paths[2] if len(repo_ids_or_paths) == 3 else None
-            algorithm = merge_algorithm if type(merge_algorithm) is str else merge_algorithm[i]
             pipeline = merge_models(repo_ids_or_paths[0], repo_ids_or_paths[1], model_c, alpha=alpha,
-                                    algorithm=algorithm, unet_block_weights=unet_block_weights,
+                                    algorithm=merge_algorithm, unet_block_weights=unet_block_weights,
                                     per_module_alphas=per_module_alphas,
                                     local_files_only=local_files_only)
             row_images = render_row(prompts,
@@ -361,20 +406,35 @@ if __name__ == '__main__':
                         required=False,
                         type=str,
                         default=None,
-                        help="(Optional) If doing merges, the algorithm to use - one of 'weighted_sum', 'sigmoid', 'inv_sigmoid', or 'add_diff'. 'add_diff' only works for 3-way merge.")
+                        nargs="+",
+                        help="(Optional) If doing merges, the algorithm to use - one of 'weighted_sum', 'sigmoid', 'inv_sigmoid', or 'add_diff'. 'add_diff' only works for 3-way merge. Specify either 1 time or the same number of times as there are merge_alphas.")
     parser.add_argument("--merge_unet_block_weights",
                         required=False,
                         type=str,
-                        help="(Optional) A string containing 25 comma-separated floats i.e. \"0.0, 0.0, 0.0, (... 22 more floats)\", to merge each part of the UNet using a different weight ('block-weighted merging').")
+                        nargs="+",
+                        help="(Optional) 25 comma-separated floats i.e. \"0.0, 0.0, 0.0, (... 22 more floats)\", to merge each part of the UNet using a different weight ('block-weighted merging'). Specify either 1 time or the same number of times as there are merge_alphas.")
     parser.add_argument("--merge_unet_alpha",
                         required=False,
                         type=float,
-                        help="(Optional) Override the merge alpha with a unet-specific alpha")
+                        nargs="+",
+                        help="(Optional) Override the merge alpha with a unet-specific alpha. Specify either 1 time or the same number of times as there are merge_alphas.")
     parser.add_argument("--merge_text_encoder_alpha",
                         required=False,
                         type=float,
-                        help="(Optional) Override the merge alpha with a text-encoder-specific alpha")
+                        nargs="+",
+                        help="(Optional) Override the merge alpha with a text-encoder-specific alpha. Specify either 1 time or the same number of times as there are merge_alphas.")
     args = parser.parse_args()
+
+
+    def use_arg_list_or_expand_or_default(arg: list, required_count: int, default: list|None) -> list:
+        if arg is None:
+            return default
+        elif len(arg) == 1:
+            # expand to required count
+            return arg * required_count
+        else:
+            return arg
+
 
     if len(args.prompts) == 1 and os.path.isfile(args.prompts[0]):
         with open(args.prompts[0], 'rt') as f:
@@ -385,14 +445,6 @@ if __name__ == '__main__':
             print(f"loaded {len(prompts)} prompts from {args.prompts[0]}")
             print({'prompts': prompts, 'negative_prompts': negative_prompts, 'seeds': seeds})
     else:
-        def use_arg_list_or_expand_or_default(arg: list, required_count: int, default: list) -> list:
-            if arg is None:
-                return default
-            elif len(arg) == 1:
-                # expand to required count
-                return arg * required_count
-            else:
-                return arg
 
         prompts = args.prompts
         negative_prompts = use_arg_list_or_expand_or_default(args.negative_prompts, len(prompts), [''] * len(prompts))
@@ -401,10 +453,10 @@ if __name__ == '__main__':
 
     merge_config = None if args.merge_alphas is None else {
         'alphas': args.merge_alphas,
-        'algorithm': args.merge_algorithm,
-        'block_weights': args.merge_unet_block_weights,
-        'unet_alpha': args.merge_unet_alpha,
-        'text_encoder_alpha': args.merge_text_encoder_alpha,
+        'algorithm': use_arg_list_or_expand_or_default(args.merge_algorithm, len(args.merge_alphas), None),
+        'block_weights': use_arg_list_or_expand_or_default(args.merge_unet_block_weights, len(args.merge_alphas), None),
+        'unet_alpha': use_arg_list_or_expand_or_default(args.merge_unet_alpha, len(args.merge_alphas), None),
+        'text_encoder_alpha': use_arg_list_or_expand_or_default(args.merge_text_encoder_alpha, len(args.merge_alphas), None),
     }
 
     render_all(prompts=prompts,
