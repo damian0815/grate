@@ -35,9 +35,9 @@ Supports numerous merge methods.
   
 * Three-way merge by adding the difference between models `b` and `c` to `a` (`--merge_algorithm add_diff`).
 * Merges using a different weight for the unet and text_encoder modules (`--merge_unet_alpha` and `--merge_text_encoder_alpha`).
-* Block-weighted merges where a different weight can be used for blocks of layers within the unet - 12 weights for the down blocks, 1 weight for the middle block, 12 weights for the up blocks (`--merge_unet_block_weights`).
+* Block-weighted merges, whereby a different weight can be used for different layers within the unet (`--merge_unet_block_weights`). Specify 12 weights for the down blocks (counting from the input layer), 1 weight for the middle block, and 12 weights for the up blocks (counting from the middle layer). An example is given below. You can find [an explanation of block-weighted merging here](https://rentry.org/Merge_Block_Weight_-china-_v1_Beta#merge-block-weight-magic-codex-10beta) (cw: waifus). 
 
-For each the advanced `--merge_` arguments, you can specify either one value to apply to all rows, or one value per row, where the number of rows is determined by the number of alpha values passed for the `--merge_alphas` argument. For example, to render a grid showing the effects of using the unet down blocks from `stabilityai/stable-diffusion-2-1` and the unet up blocks from `IlluminatiAI/Illuminati_Diffusion_v1.0`, and vice-versa, use this command:
+For each the advanced `--merge_` arguments, you can specify either one value to apply to all rows, or one value per row, where the number of rows is determined by the number of alpha values passed for the `--merge_alphas` argument. For example, to render a grid showing the effects of using the unet down blocks from `stabilityai/stable-diffusion-2-1` and the unet up blocks from `IlluminatiAI/Illuminati_Diffusion_v1.0` on the first row, and the effect of doing the opposite weighting on the second row, use this command:
 
 ```commandline
     grate --prompts "a cat" "a dog" \
