@@ -361,6 +361,10 @@ class CheckpointMergerPipeline(DiffusionPipeline):
                     print(f"Skipping {attr} do to an unexpected error: {str(e)}")
                     continue
                 print(f"MERGING {attr}")
+                if block_weights is not None and type(module) is UNet2DConditionModel:
+                    print(f" - using block weights {block_weights}")
+                elif module_override_alphas.get(attr, None) is not None:
+                    print(f" - using override alpha {module_override_alphas[attr]}")
 
                 for key in theta_0.keys():
                     this_alpha = (
