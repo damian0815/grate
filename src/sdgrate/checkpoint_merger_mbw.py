@@ -87,36 +87,6 @@ def get_block_alpha(block_weights: list, key: str) -> float:
     return block_weights[weight_index]
 
 
-def merge_diffusers_unets_block_weighted(weights: list,
-                               unet_0_state_dict,
-                               unet_1_state_dict,
-                               verbose=False,
-                               ):
-    """
-    Merge unet_0 and unet_1 applying a different weight to each level in the unet.
-
-    `weights` is a list of 25 floats:
-        12 for the unet down-blocks,
-        1 for the middle block,
-        12 for the unet up-blocks.
-    Each weight is 0..1 where 0 means use unet_0's value and 1 means use unet_1's value.
-    """
-
-    if len(weights) != NUM_TOTAL_BLOCKS:
-        raise ValueError(f"weights must have {NUM_TOTAL_BLOCKS} floats.")
-
-    theta_0 = unet_0_state_dict
-    theta_1 = unet_1_state_dict
-
-    dprint(f"-- start merge --", verbose)
-
-    for key in (tqdm(theta_0.keys(), desc="Merging...")):
-        this_block_alpha = get_block_alpha(block_weights=weights, key=key)
-        dprint(f"  key : {key} -> alpha {this_block_alpha}", verbose)
-        theta_0[key] = (1 - this_block_alpha) * theta_0[key] + this_block_alpha * theta_1[key]
-
-    return unet_0_state_dict
-
 class CheckpointMergerPipeline(DiffusionPipeline):
     """
     A class that that supports merging diffusion models based on the discussion here:

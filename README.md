@@ -112,3 +112,8 @@ options:
 
 Enjoy!
 
+## Using as a library
+
+The main `sdgrate.grate` module includes the following functions, which may be useful: `merge_models`, `render_row`, `render_all`. 
+
+The model merger is implemented as a custom pipeline based on a modified version of the (checkpoint_merger pipeline)
