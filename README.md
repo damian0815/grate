@@ -9,8 +9,7 @@ Supports huggingface repo ids, local CompVis-style `.ckpt` files, and paths to l
 The above image was rendered using the following commandline on an empty runpod instance:
 
 ```commandline
-python3 grate.py \
-    --prompts \
+grate --prompts \
         "a cat playing with a ball in the forest" \
         "a dog chasing a postman" \
         "a fish singing the blues" \
@@ -20,6 +19,14 @@ python3 grate.py \
         "nitrosocke/Arcane-Diffusion" \
     --output_path ./grate-demo.png
 ```
+
+## Installation
+
+```commandline
+python -m pip install sdgrate
+```
+
+Once it's installed, run `grate -h` for help.
 
 ## Merging
 
@@ -54,6 +61,7 @@ Note that the number of values passed to `--merge_alphas` matches the number of 
 Run `python3 grate.py -h` for help:
 
 ```commandline
+$ grate -h
 usage: grate [-h] --prompts PROMPTS [PROMPTS ...] --repo_ids_or_paths REPO_IDS_OR_PATHS [REPO_IDS_OR_PATHS ...] --output_path OUTPUT_PATH [--device DEVICE]
              [--batch_size BATCH_SIZE] [--width WIDTH] [--height HEIGHT] [--negative_prompts NEGATIVE_PROMPTS [NEGATIVE_PROMPTS ...]] [--seeds SEEDS [SEEDS ...]]
              [--cfg CFG] [--local_files_only] [--merge_alphas MERGE_ALPHAS [MERGE_ALPHAS ...]] [--merge_algorithm MERGE_ALGORITHM [MERGE_ALGORITHM ...]]

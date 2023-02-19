@@ -337,7 +337,7 @@ def render_all(prompts: list[str], negative_prompts: Optional[list[str]], seeds:
     return grid_image
 
 
-if __name__ == '__main__':
+def main():
     parser = argparse.ArgumentParser(
         prog="grate",
         description="Generates a grid of images by running a set of prompts through different Stable Diffusion models.",
@@ -358,7 +358,7 @@ if __name__ == '__main__':
                              "--repo_ids_or_paths \"stablityai/stable-diffusion-2-1\" \"../models/v1-5-pruned-emaonly.ckpt\"")
     parser.add_argument("--output_path",
                         required=True,
-                        help="Where to save the resulting image. Also saves partial images here as each row is finished rendering.")
+                        help="Where to save the resulting image. Also saves partially-rendered images to this location as each row finishes rendering.")
     parser.add_argument("--device",
                         required=False,
                         default=None,
@@ -367,32 +367,32 @@ if __name__ == '__main__':
                         required=False,
                         type=int,
                         default=1,
-                        help="(Optional) Batch size, default 1")
+                        help="(Optional, default=1) Batch size.")
     parser.add_argument("--width",
                         required=False,
                         default=512,
                         type=int,
-                        help="(Optional) Individual image width")
+                        help="(Optional, default=512) Individual image width")
     parser.add_argument("--height",
                         required=False,
                         type=int,
                         default=512,
-                        help="(Optional) Individual image height")
+                        help="(Optional, defatul=512) Individual image height")
     parser.add_argument("--negative_prompts",
                         required=False,
                         type=str,
                         nargs="+",
-                        help="(Optional) Negative prompts. Must be either 1 string to use for all prompts, or one string for each prompt passed to --prompts.")
+                        help="(Optional) Negative prompts. Specify either one string to share for all `--prompts`, or as many strings as there are `--prompts`.")
     parser.add_argument("--seeds",
                         required=False,
                         type=int,
                         nargs="+",
-                        help="(Optional) Seeds. Must be either 1 int to use for all prompts, or exactly 1 int per prompt.")
+                        help="(Optional) Seeds. Specify either one seed to share for all `--prompts`, or as many seeds as there are `--prompts`.")
     parser.add_argument("--cfg",
                         required=False,
                         type=float,
                         default=7.5,
-                        help="(Optional) CFG scale (default=7.5).")
+                        help="(Optional, default=7.5) CFG scale.")
     parser.add_argument("--local_files_only",
                         required=False,
                         action='store_true',
@@ -471,3 +471,6 @@ if __name__ == '__main__':
                local_files_only=args.local_files_only,
                save_partial_filename=args.output_path)
     print(f"grate saved to {args.output_path}")
+
+if __name__ == '__main__':
+    main()

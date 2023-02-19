@@ -1,6 +1,6 @@
 [project]
 name = "sdgrate"
-version = "0.1.0"
+version = "0.1.2"
 authors = [
   { name="Damian Stewart", email="null@damianstewart.com" },
 ]
@@ -13,15 +13,20 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 dependencies = [
-    "diffusers >= 0.12",
-    "pyparsing ~= 3.0",
-    "torch",
-    "transformers ~= 4.25"
+    "diffusers[torch]",
+    "huggingface-hub",
+    "Pillow",
+    "tqdm",
+    "transformers",
 ]
 
 [project.urls]
 "Homepage" = "https://github.com/damian0815/grate"
 "Bug Tracker" = "https://github.com/damian0815/grate/issues"
+
+[project.scripts]
+"grate" = "sdgrate.grate:main"
+
 
 [build-system]
 requires = ["setuptools>=61.0"]
