@@ -2,7 +2,7 @@
 
 Make a matrix of images by running the same prompt through multiple Stable Diffusion models. 
 
-![Demo output of a grid of prompts rendered with htree different stable diffusion models](grate-demo.png)
+![Demo output of a grid of prompts rendered with three different stable diffusion models](grate-demo.png)
 
 Supports huggingface repo ids, local CompVis-style `.ckpt` files, and paths to local folder hierarchies containing diffusers-format models. Currently using DDPM++2 sampler at 15 steps.
 
