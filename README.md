@@ -51,7 +51,8 @@ For each the advanced `--merge_` arguments, you can specify either one value to 
     grate --prompts "a cat" "a dog" \
         --repo_ids_or_paths stabilityai/stable-diffusion-2-1 IlluminatiAI/Illuminati_Diffusion_v1.0 \
         --merge_alphas 0.5 0.5 \
-        --merge_unet_block_weights "0,0,0,0,0,0,0,0,0,0,0,0,0.5,1,1,1,1,1,1,1,1,1,1,1,1" "1,1,1,1,1,1,1,1,1,1,1,1,0.5,0,0,0,0,0,0,0,0,0,0,0,0"
+        --merge_unet_block_weights "0,0,0,0,0,0,0,0,0,0,0,0,0.5,1,1,1,1,1,1,1,1,1,1,1,1" "1,1,1,1,1,1,1,1,1,1,1,1,0.5,0,0,0,0,0,0,0,0,0,0,0,0" \
+        --output_path /tmp/unet-test-cat-dog.jpg
 ```
 
 Note that the number of values passed to `--merge_alphas` matches the number of strings passed to `--merge_unet_block_weights`.
