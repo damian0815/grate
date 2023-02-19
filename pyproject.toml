@@ -1,6 +1,6 @@
 [project]
 name = "sdgrate"
-version = "0.1.4"
+version = "0.1.5"
 authors = [
   { name="Damian Stewart", email="null@damianstewart.com" },
 ]
@@ -27,6 +27,12 @@ dependencies = [
 
 [project.scripts]
 "grate" = "sdgrate.grate:main"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [build-system]
 requires = ["setuptools>=61.0"]
