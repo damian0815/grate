@@ -64,7 +64,7 @@ def get_wrapped_text(text: str, font: ImageFont,
                         lines.append(next_word)
         if current_line is not None:
             lines.append(current_line)
-        bbox = font.getbbox(lines) # (left, top, right, bottom)
+        bbox = font.getbbox("\n".join(lines)) # (left, top, right, bottom)
         if max_height is None or remaining_fontsize_reduction_iterations <= 0 or abs(bbox[3]-bbox[1]) <= max_height:
             # fits in box, or we shouldn't try again
             break
