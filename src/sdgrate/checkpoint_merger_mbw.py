@@ -340,7 +340,7 @@ class CheckpointMergerPipeline(DiffusionPipeline):
                     this_alpha = (
                         get_block_alpha(block_weights, key)
                         if block_weights is not None and type(module) is UNet2DConditionModel
-                        else (module_override_alphas.get(attr, None) or alpha)
+                        else (module_override_alphas.get(attr, alpha))
                     )
                     if theta_2:
                         theta_0[key] = theta_func(theta_0[key], theta_1[key], theta_2[key], this_alpha)
