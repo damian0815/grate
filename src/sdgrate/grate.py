@@ -119,8 +119,8 @@ def make_image_grid(imgs, num_rows, num_cols, row_labels: list[str], col_labels:
 
     # font = ImageFont.load_default()
     font_path = os.path.join(os.path.dirname(__file__), "LibreBaskerville-DpdE.ttf")
-    col_font = ImageFont.truetype(font_path, size=48)
-    row_font = ImageFont.truetype(font_path, size=32)
+    col_font = ImageFont.truetype(font_path, size=32)
+    row_font = ImageFont.truetype(font_path, size=48)
 
     print(f"compositing {len(imgs)} images...")
 
