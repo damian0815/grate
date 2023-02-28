@@ -19,14 +19,15 @@ from huggingface_hub import list_repo_refs
 # get_wrapped_text adapted from https://stackoverflow.com/a/67203353
 def get_wrapped_text(text: str, font: ImageFont,
                      line_width: int,
-                     max_height: int=None,
+                     max_height: int=None, draw: ImageDraw=None,
                      max_fontsize_reduction_iterations=3) -> tuple[list[str], int|None]:
     """
     Wrap `text` so that when it is drawn using `font` it can fit horizontally within the given
     `line_width` pixels.
 
     If `max_height` is not None, attempt to reduce the font size at most
-    `max_fontsize_reduction_iterations` times until it fits in the requested height.
+    `max_fontsize_reduction_iterations` times until it fits in the requested height. Requires
+    that `draw` is also set.
 
     Returns a list of lines, and a reduced font size or None if no font size reduction
     was calculated.
@@ -64,7 +65,7 @@ def get_wrapped_text(text: str, font: ImageFont,
                         lines.append(next_word)
         if current_line is not None:
             lines.append(current_line)
-        bbox = font.getbbox(lines) # (left, top, right, bottom)
+        bbox = draw.multiline_textbbox((0,0), "\n".join(lines), font=font) # (left, top, right, bottom)
         if max_height is None or remaining_fontsize_reduction_iterations <= 0 or abs(bbox[3]-bbox[1]) <= max_height:
             # fits in box, or we shouldn't try again
             break
@@ -80,14 +81,15 @@ def make_label_image(label: str, font: ImageFont, width: int, height: int, margi
     if margins is None:
         margins = [10, 10, 10, 10]
     line_spacing = 5  # pixels between lines
+    label_image = Image.new('RGB', size=(width, height), color=(247, 247, 247))
+    draw = ImageDraw.Draw(label_image)
     wrapped_lines_list, reduced_font_size_or_none = get_wrapped_text(label,
                                                                      font,
                                                                      line_width=width - (margins[0] + margins[2]),
-                                                                     max_height=height)
+                                                                     max_height=height - (margins[1] + margins[3]), 
+                                                                     draw=draw)
     wrapped_text = '\n'.join(wrapped_lines_list)
     possibly_reduced_font = font if reduced_font_size_or_none is None else ImageFont.truetype(font.path, reduced_font_size_or_none)
-    label_image = Image.new('RGB', size=(width, height), color=(247, 247, 247))
-    draw = ImageDraw.Draw(label_image)
     text_bbox = draw.multiline_textbbox((width / 2, 0),
                                         text=wrapped_text,
                                         font=possibly_reduced_font,
@@ -99,7 +101,7 @@ def make_label_image(label: str, font: ImageFont, width: int, height: int, margi
     y_offset = (height - text_bbox_height) / 2
     x_offset = (width - margins[2] - margins[0]) // 2
     draw.multiline_text((margins[0] + x_offset, margins[1] + y_offset),
-                        text=wrapped_text, font=font, anchor='ma', fill=(64, 48, 32))
+                        text=wrapped_text, font=possibly_reduced_font, anchor='ma', fill=(64, 48, 32))
     return label_image
 
 
@@ -119,7 +121,7 @@ def make_image_grid(imgs, num_rows, num_cols, row_labels: list[str], col_labels:
 
     # font = ImageFont.load_default()
     font_path = os.path.join(os.path.dirname(__file__), "LibreBaskerville-DpdE.ttf")
-    col_font = ImageFont.truetype(font_path, size=48)
+    col_font = ImageFont.truetype(font_path, size=32)
     row_font = ImageFont.truetype(font_path, size=32)
 
     print(f"compositing {len(imgs)} images...")
@@ -247,8 +249,11 @@ def merge_models(model_a_repo_id_or_path: str, model_b_repo_id_or_path: str, mod
 def render_all(prompts: list[str], negative_prompts: Optional[list[str]], seeds: list[int], cfg: float,
                repo_ids_or_paths: list[str],
                device: str,
-               size: tuple[int, int], batch_size: int,
-                save_partial_filename: str = None, local_files_only: bool=False,
+               size: tuple[int, int],
+               batch_size: int,
+               inference_steps: int = 15,
+               save_partial_filename: str = None,
+               local_files_only: bool = False,
                merge_config: Optional[dict] = None
                ) -> Image:
     all_images = []
@@ -313,6 +318,7 @@ def render_all(prompts: list[str], negative_prompts: Optional[list[str]], seeds:
                                     device=device,
                                     batch_size=batch_size,
                                     cfg=cfg,
+                                    num_inference_steps=inference_steps,
                                     sample_w=size[0], sample_h=size[1])
             all_images += row_images
             save_partial_if_requested()
@@ -329,6 +335,7 @@ def render_all(prompts: list[str], negative_prompts: Optional[list[str]], seeds:
                                     device=device,
                                     batch_size=batch_size,
                                     cfg=cfg,
+                                    num_inference_steps=inference_steps,
                                     sample_w=size[0], sample_h=size[1])
             all_images += row_images
             save_partial_if_requested()
@@ -393,6 +400,11 @@ def main():
                         type=float,
                         default=7.5,
                         help="(Optional, default=7.5) CFG scale.")
+    parser.add_argument("--steps",
+                        required=False,
+                        type=int,
+                        default=15,
+                        help="(Optional, default=15) How many inference steps to run")
     parser.add_argument("--local_files_only",
                         required=False,
                         action='store_true',
@@ -468,6 +480,7 @@ def main():
                size=(args.width, args.height),
                batch_size=args.batch_size,
                cfg=args.cfg,
+               inference_steps=args.steps,
                local_files_only=args.local_files_only,
                save_partial_filename=args.output_path)
     print(f"grate saved to {args.output_path}")
