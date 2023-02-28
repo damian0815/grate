@@ -19,14 +19,15 @@ from huggingface_hub import list_repo_refs
 # get_wrapped_text adapted from https://stackoverflow.com/a/67203353
 def get_wrapped_text(text: str, font: ImageFont,
                      line_width: int,
-                     max_height: int=None,
+                     max_height: int=None, draw: ImageDraw=None,
                      max_fontsize_reduction_iterations=3) -> tuple[list[str], int|None]:
     """
     Wrap `text` so that when it is drawn using `font` it can fit horizontally within the given
     `line_width` pixels.
 
     If `max_height` is not None, attempt to reduce the font size at most
-    `max_fontsize_reduction_iterations` times until it fits in the requested height.
+    `max_fontsize_reduction_iterations` times until it fits in the requested height. Requires
+    that `draw` is also set.
 
     Returns a list of lines, and a reduced font size or None if no font size reduction
     was calculated.
@@ -64,7 +65,7 @@ def get_wrapped_text(text: str, font: ImageFont,
                         lines.append(next_word)
         if current_line is not None:
             lines.append(current_line)
-        bbox = font.getbbox("\n".join(lines)) # (left, top, right, bottom)
+        bbox = draw.multiline_textbbox((0,0), "\n".join(lines), font=font) # (left, top, right, bottom)
         if max_height is None or remaining_fontsize_reduction_iterations <= 0 or abs(bbox[3]-bbox[1]) <= max_height:
             # fits in box, or we shouldn't try again
             break
@@ -80,14 +81,15 @@ def make_label_image(label: str, font: ImageFont, width: int, height: int, margi
     if margins is None:
         margins = [10, 10, 10, 10]
     line_spacing = 5  # pixels between lines
+    label_image = Image.new('RGB', size=(width, height), color=(247, 247, 247))
+    draw = ImageDraw.Draw(label_image)
     wrapped_lines_list, reduced_font_size_or_none = get_wrapped_text(label,
                                                                      font,
                                                                      line_width=width - (margins[0] + margins[2]),
-                                                                     max_height=height)
+                                                                     max_height=height - (margins[1] + margins[3]), 
+                                                                     draw=draw)
     wrapped_text = '\n'.join(wrapped_lines_list)
     possibly_reduced_font = font if reduced_font_size_or_none is None else ImageFont.truetype(font.path, reduced_font_size_or_none)
-    label_image = Image.new('RGB', size=(width, height), color=(247, 247, 247))
-    draw = ImageDraw.Draw(label_image)
     text_bbox = draw.multiline_textbbox((width / 2, 0),
                                         text=wrapped_text,
                                         font=possibly_reduced_font,
@@ -99,7 +101,7 @@ def make_label_image(label: str, font: ImageFont, width: int, height: int, margi
     y_offset = (height - text_bbox_height) / 2
     x_offset = (width - margins[2] - margins[0]) // 2
     draw.multiline_text((margins[0] + x_offset, margins[1] + y_offset),
-                        text=wrapped_text, font=font, anchor='ma', fill=(64, 48, 32))
+                        text=wrapped_text, font=possibly_reduced_font, anchor='ma', fill=(64, 48, 32))
     return label_image
 
 
