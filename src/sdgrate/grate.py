@@ -16,6 +16,10 @@ from tqdm import tqdm
 from huggingface_hub import list_repo_refs
 
 
+def disable_nsfw_safety_checker(images, **kwargs):
+    return images, False
+
+
 # get_wrapped_text adapted from https://stackoverflow.com/a/67203353
 def get_wrapped_text(text: str, font: ImageFont,
                      line_width: int,
@@ -172,7 +176,8 @@ def render_row(prompts: list[str],
                sample_w=512,
                sample_h=512,
                cfg=7.5,
-               num_inference_steps=15  # ddpm++ solver: 15 is typically enough
+               num_inference_steps=15,  # ddpm++ solver: 15 is typically enough
+               disable_nsfw_checker: bool = False,
                ) -> list[Image]:
     # ddpm++
     pipeline.scheduler = DPMSolverMultistepScheduler.from_config(pipeline.scheduler.config,
@@ -185,6 +190,8 @@ def render_row(prompts: list[str],
         if is_xformers_available():
             pipeline.enable_xformers_memory_efficient_attention()
     pipeline = pipeline.to(device)
+    if disable_nsfw_checker:
+        pipeline.safety_checker = disable_nsfw_safety_checker
     images = []
     negative_prompts = negative_prompts or [""] * len(prompts)
     batches = chunk_list(list(zip(prompts, negative_prompts, seeds)), batch_size)
@@ -254,7 +261,8 @@ def render_all(prompts: list[str], negative_prompts: Optional[list[str]], seeds:
                inference_steps: int = 15,
                save_partial_filename: str = None,
                local_files_only: bool = False,
-               merge_config: Optional[dict] = None
+               merge_config: Optional[dict] = None,
+               disable_nsfw_checker: bool = False,
                ) -> Image:
     all_images = []
     print(f"{len(prompts)} prompts")
@@ -319,7 +327,8 @@ def render_all(prompts: list[str], negative_prompts: Optional[list[str]], seeds:
                                     batch_size=batch_size,
                                     cfg=cfg,
                                     num_inference_steps=inference_steps,
-                                    sample_w=size[0], sample_h=size[1])
+                                    sample_w=size[0], sample_h=size[1],
+                                    disable_nsfw_checker=disable_nsfw_checker,)
             all_images += row_images
             save_partial_if_requested()
         grid_image = make_image_grid(all_images, len(merge_alphas), len(prompts), row_labels, prompts)
@@ -336,7 +345,8 @@ def render_all(prompts: list[str], negative_prompts: Optional[list[str]], seeds:
                                     batch_size=batch_size,
                                     cfg=cfg,
                                     num_inference_steps=inference_steps,
-                                    sample_w=size[0], sample_h=size[1])
+                                    sample_w=size[0], sample_h=size[1],
+                                    disable_nsfw_checker=disable_nsfw_checker,)
             all_images += row_images
             save_partial_if_requested()
         grid_image = make_image_grid(all_images, len(repo_ids_or_paths), len(prompts), row_labels, prompts)
@@ -405,6 +415,10 @@ def main():
                         type=int,
                         default=15,
                         help="(Optional, default=15) How many inference steps to run")
+    parser.add_argument("--disable_nsfw_checker",
+                        required=False,
+                        action="store_true",
+                        help="(Optional)")
     parser.add_argument("--local_files_only",
                         required=False,
                         action='store_true',
@@ -482,7 +496,8 @@ def main():
                cfg=args.cfg,
                inference_steps=args.steps,
                local_files_only=args.local_files_only,
-               save_partial_filename=args.output_path)
+               save_partial_filename=args.output_path,
+               disable_nsfw_checker=args.disable_nsfw_checker,)
     print(f"grate saved to {args.output_path}")
 
 if __name__ == '__main__':
