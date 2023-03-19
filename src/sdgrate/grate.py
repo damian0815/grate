@@ -520,7 +520,7 @@ def main():
 
 
     merge_config = {
-        'alphas': args.merge_alphas,
+        'alphas': args.merge_alpha,
         'algorithms': args.merge_algorithm,
         'unet_alphas': args.merge_unet_alpha,
         'text_encoder_alphas': args.merge_text_encoder_alpha,
