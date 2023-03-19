@@ -265,8 +265,8 @@ def explode_merge_config(merge_config: dict) -> list[dict]:
 
     merge_alphas = get_merge_config_values('alphas', [0.5])
     merge_algorithms = get_merge_config_values('algorithms', ['weighted_sum'])
-    unet_alphas = get_merge_config_values('unet_alphas', [None]),
-    text_encoder_alphas = get_merge_config_values('text_encoder_alphas', [None]),
+    unet_alphas = get_merge_config_values('unet_alphas', [None])
+    text_encoder_alphas = get_merge_config_values('text_encoder_alphas', [None])
     unet_block_weights_strs = get_merge_config_values('block_weights', [])
     if len(unet_block_weights_strs) == 0:
         unet_block_weights = [None]
@@ -288,7 +288,6 @@ def explode_merge_config(merge_config: dict) -> list[dict]:
                             'text_encoder_alpha': ta,
                             'block_weights': bw,
                         })
-    print(f"built merge_configs {merge_configs}")
     return merge_configs
 
 
@@ -364,7 +363,7 @@ def render_all(prompts: list[str], negative_prompts: Optional[list[str]], seeds:
                 save_half = merge_config.get('save_merge_half', True)
                 if save_half:
                     pipeline.to(torch.float16)
-                save_merge_path = f"{save_merge_path_prefix}_{merge_index}"
+                save_merge_path = f"{save_merge_path_prefix}_{merge_index:02f}"
                 pipeline.save_pretrained(save_merge_path)
 
             del pipeline
@@ -522,7 +521,7 @@ def main():
         negative_prompts = use_arg_list_or_expand_or_default(args.negative_prompts, len(prompts), [''] * len(prompts))
         seeds = use_arg_list_or_expand_or_default(args.seeds, len(prompts), [1 + i for i in range(len(prompts))])
 
-
+    print(f"args.merge_unet_alpha: {args.merge_unet_alpha}")
     merge_config = {
         'alphas': args.merge_alpha,
         'algorithms': args.merge_algorithm,
