@@ -490,7 +490,6 @@ def main():
                         help="(Optional) If doing a merge, save all merge combinations using this path as a prefix.")
     parser.add_argument("--save_merge_float32",
                         action="store_true",
-                        type=str,
                         help="(Optional) If saving merges, save with float32 precision (default is float16).")
     args = parser.parse_args()
 
