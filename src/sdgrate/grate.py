@@ -267,10 +267,13 @@ def explode_merge_config(merge_config: dict) -> list[dict]:
     merge_algorithms = get_merge_config_values('algorithms', ['weighted_sum'])
     unet_alphas = get_merge_config_values('unet_alphas', [None]),
     text_encoder_alphas = get_merge_config_values('text_encoder_alphas', [None]),
-    unet_block_weights_strs = get_merge_config_values('block_weights', [None])
-    unet_block_weights = [(None if s is None else float(f))
+    unet_block_weights_strs = get_merge_config_values('block_weights', [])
+    if len(unet_block_weights_strs) == 0:
+        unet_block_weights = [None]
+    else:
+        unet_block_weights = [float(f)
                           for s in unet_block_weights_strs
-                          for f in ([None] if s is None else s.split(','))]
+                          for f in s.split(',')]
 
     merge_configs = []
     for a in merge_algorithms:
@@ -285,6 +288,7 @@ def explode_merge_config(merge_config: dict) -> list[dict]:
                             'text_encoder_alpha': ta,
                             'block_weights': bw,
                         })
+    print(f"built merge_configs {merge_configs}")
     return merge_configs
 
 
