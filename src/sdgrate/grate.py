@@ -153,7 +153,10 @@ def chunk_list(list, batch_size):
 
 def load_model(repo_id_or_path, prefer_fp16: bool = True, local_files_only: bool=False):
     if os.path.isfile(repo_id_or_path):
-        return load_pipeline_from_original_stable_diffusion_ckpt(repo_id_or_path)
+        yaml_file = (os.path.splitext(repo_id_or_path)[0] + ".yaml")
+        if not os.path.exists(yaml_file):
+            yaml_file = None
+        return load_pipeline_from_original_stable_diffusion_ckpt(repo_id_or_path, original_config_file=yaml_file)
     elif os.path.isdir(repo_id_or_path):
         return StableDiffusionPipeline.from_pretrained(repo_id_or_path)
     else:
