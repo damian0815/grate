@@ -363,7 +363,7 @@ def render_all(prompts: list[str], negative_prompts: Optional[list[str]], seeds:
                 save_half = merge_config.get('save_merge_half', True)
                 if save_half:
                     pipeline.to(torch.float16)
-                save_merge_path = f"{save_merge_path_prefix}_{merge_index:02f}"
+                save_merge_path = f"{save_merge_path_prefix}_{merge_index:02d}"
                 pipeline.save_pretrained(save_merge_path)
 
             del pipeline
