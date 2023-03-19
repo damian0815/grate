@@ -270,7 +270,7 @@ def explode_merge_config(merge_config: dict) -> list[dict]:
     unet_block_weights_strs = get_merge_config_values('block_weights', [None])
     unet_block_weights = [(None if s is None else float(f))
                           for s in unet_block_weights_strs
-                          for f in s.split(',')]
+                          for f in (None if s is None else s.split(','))]
 
     merge_configs = []
     for a in merge_algorithms:
