@@ -252,6 +252,40 @@ def merge_models(model_a_repo_id_or_path: str, model_b_repo_id_or_path: str, mod
 
     return merged_pipe
 
+def explode_merge_config(merge_config: dict) -> list[dict]:
+
+    def get_merge_config_values(key, default):
+        v = merge_config.get(key, None)
+        if v is None:
+            return default
+        return v
+
+    merge_alphas = get_merge_config_values('alphas', [0.5])
+    merge_algorithms = get_merge_config_values('algorithms', ['weighted_sum'])
+    unet_alphas = get_merge_config_values('unet_alphas', [None]),
+    text_encoder_alphas = get_merge_config_values('text_encoder_alphas', [None]),
+    unet_block_weights_strs = get_merge_config_values('block_weights', [None])
+    unet_block_weights = [(None if s is None else float(f))
+                          for s in unet_block_weights_strs
+                          for f in s.split(',')]
+
+    merge_configs = []
+    for a in merge_algorithms:
+        for ma in merge_alphas:
+            for ua in unet_alphas:
+                for ta in text_encoder_alphas:
+                    for bw in unet_block_weights:
+                        merge_configs.append({
+                            'alpha': ma,
+                            'algorithm': a,
+                            'unet_alpha': ua,
+                            'text_encoder_alpha': ta,
+                            'block_weights': bw,
+                        })
+    return merge_configs
+
+
+
 
 def render_all(prompts: list[str], negative_prompts: Optional[list[str]], seeds: list[int], cfg: float,
                repo_ids_or_paths: list[str],
@@ -259,7 +293,7 @@ def render_all(prompts: list[str], negative_prompts: Optional[list[str]], seeds:
                size: tuple[int, int],
                batch_size: int,
                inference_steps: int = 15,
-               save_partial_filename: str = None,
+               save_partial_filename: Optional[str] = None,
                local_files_only: bool = False,
                merge_config: Optional[dict] = None,
                disable_nsfw_checker: bool = False,
@@ -280,35 +314,21 @@ def render_all(prompts: list[str], negative_prompts: Optional[list[str]], seeds:
         if len(repo_ids_or_paths) != 2 and len(repo_ids_or_paths) != 3:
             raise ValueError("Must specify either 2 or 3 models when using merge_alphas")
 
-        merge_alphas = merge_config['alphas']
+        merge_configs = explode_merge_config(merge_config)
 
-        def get_merge_config_setting(key, index, default):
-            v = merge_config.get(key, None)
-            if v is None:
-                return default
-            if type(v) is list:
-                if len(v) == 1:
-                    return v[0]
-                if len(v) != len(merge_alphas):
-                    raise ValueError(f"Wrong number of values for {key} - expected {len(merge_alphas)}, found {len(v)}")
-                return v[index]
-            return v
-
-        for i, alpha in enumerate(tqdm(merge_alphas)):
-
-            merge_algorithm = get_merge_config_setting('algorithm', i, 'weighted_sum')
-            per_module_alphas = {
-                'unet': get_merge_config_setting('unet_alpha', i, None),
-                'text_encoder': get_merge_config_setting('text_encoder_alpha', i, None),
-            }
-            unet_block_weights_str: str|None = get_merge_config_setting('block_weights', i, None)
-            unet_block_weights = None if unet_block_weights_str is None else [float(f) for f in
-                                                                              unet_block_weights_str.split(',')]
+        for merge_index, config in enumerate(tqdm(merge_configs)):
+            unet_block_weights = config['block_weights']
             if unet_block_weights is not None and len(unet_block_weights) != 25:
                 raise ValueError(f"Wrong number of unet block weights. There must be 25, eg \"0.0,0.04,0.08,0.12,0.16,"
                                  f"0.2,0.24,0.28,0.32,0.36,0.4,0.44,0.48,0.52,0.56,0.6,0.64,0.68,0.72,0.76,0.8,0.84,0.88,"
                                  f"0.92,0.96\". You have specified \"{unet_block_weights}\", which is not valid.")
 
+            merge_algorithm = config['algorithm']
+            per_module_alphas = {
+                'unet': config['unet_alpha'],
+                'text_encoder': config['text_encoder_alpha']
+            }
+            alpha = config['alpha']
             this_model_label = f"{merge_algorithm} merge of {repo_ids_or_paths} with alpha {alpha}, " \
                                f"per_module_alphas {per_module_alphas}, " \
                                f"unet_block_weights {unet_block_weights}"
@@ -331,7 +351,18 @@ def render_all(prompts: list[str], negative_prompts: Optional[list[str]], seeds:
                                     disable_nsfw_checker=disable_nsfw_checker,)
             all_images += row_images
             save_partial_if_requested()
-        grid_image = make_image_grid(all_images, len(merge_alphas), len(prompts), row_labels, prompts)
+
+            save_merge_path_prefix = merge_config.get('save_merge_path_prefix', None)
+            if save_merge_path_prefix is not None:
+                save_half = merge_config.get('save_merge_half', True)
+                if save_half:
+                    pipeline.to(torch.float16)
+                save_merge_path = f"{save_merge_path_prefix}_{merge_index}"
+                pipeline.save_pretrained(save_merge_path)
+
+            del pipeline
+
+        grid_image = make_image_grid(all_images, len(merge_configs), len(prompts), row_labels, prompts)
     else:
         row_labels = repo_ids_or_paths
         for repo_id_or_path in tqdm(repo_ids_or_paths):
@@ -349,6 +380,7 @@ def render_all(prompts: list[str], negative_prompts: Optional[list[str]], seeds:
                                     disable_nsfw_checker=disable_nsfw_checker,)
             all_images += row_images
             save_partial_if_requested()
+            del pipeline
         grid_image = make_image_grid(all_images, len(repo_ids_or_paths), len(prompts), row_labels, prompts)
 
     return grid_image
@@ -423,32 +455,40 @@ def main():
                         required=False,
                         action='store_true',
                         help="(Optional) Use only local data (do not attempt to download or update models)")
-    parser.add_argument("--merge_alphas",
+    parser.add_argument("--merge_alpha",
                         required=False,
                         type=float,
                         nargs="+",
-                        help="(Optional) If set, --repo_ids_or_paths must specify either 2 or 3 models, which will be merged using the given alphas and used in place of multiple models.")
+                        help="(Optional) If set, --repo_ids_or_paths must specify either 2 or 3 models, which will be merged using the given alpha and used in place of multiple models.")
     parser.add_argument("--merge_algorithm",
                         required=False,
                         type=str,
                         default=None,
                         nargs="+",
-                        help="(Optional) If doing merges, the algorithm to use - one of 'weighted_sum', 'sigmoid', 'inv_sigmoid', or 'add_diff'. 'add_diff' only works for 3-way merge. Specify either 1 algorithm to use for all rows, or the same number of algorithms as there are merge_alphas.")
+                        help="(Optional) If doing merges, the algorithm to use - one of 'weighted_sum', 'sigmoid', 'inv_sigmoid', or 'add_diff'. 'add_diff' only works for 3-way merge. ")
     parser.add_argument("--merge_unet_block_weights",
                         required=False,
                         type=str,
                         nargs="+",
-                        help="(Optional) 25 comma-separated floats specified as strings, eg \"0.0, 0.0, 0.0, (... 22 more floats)\", to merge each part of the UNet using a different weight ('block-weighted merging'). Specify either 1 list to use for all rows, or the same number of lists as there are merge_alphas.")
+                        help="(Optional) 25 comma-separated floats specified as strings, eg \"0.0, 0.0, 0.0, (... 22 more floats)\", to merge each part of the UNet using a different weight ('block-weighted merging').")
     parser.add_argument("--merge_unet_alpha",
                         required=False,
                         type=float,
                         nargs="+",
-                        help="(Optional) Override the merge alpha with a unet-specific alpha. Specify either 1 alpha to use for all rows, or the same number of alphas as there are merge_alphas.")
+                        help="(Optional) Override the merge alpha with a unet-specific alpha.")
     parser.add_argument("--merge_text_encoder_alpha",
                         required=False,
                         type=float,
                         nargs="+",
-                        help="(Optional) Override the merge alpha with a text-encoder-specific alpha. Specify either 1 alpha to use for all rows, or the same number of alphas as there are merge_alphas.")
+                        help="(Optional) Override the merge alpha with a text-encoder-specific alpha.")
+    parser.add_argument("--save_merge_path_prefix",
+                        required=False,
+                        type=str,
+                        help="(Optional) If doing a merge, save all merge combinations using this path as a prefix.")
+    parser.add_argument("--save_merge_float32",
+                        action="store_true",
+                        type=str,
+                        help="(Optional) If saving merges, save with float32 precision (default is float16).")
     args = parser.parse_args()
 
 
@@ -477,13 +517,17 @@ def main():
         seeds = use_arg_list_or_expand_or_default(args.seeds, len(prompts), [1 + i for i in range(len(prompts))])
 
 
-    merge_config = None if args.merge_alphas is None else {
+    merge_config = {
         'alphas': args.merge_alphas,
-        'algorithm': use_arg_list_or_expand_or_default(args.merge_algorithm, len(args.merge_alphas), None),
-        'block_weights': use_arg_list_or_expand_or_default(args.merge_unet_block_weights, len(args.merge_alphas), None),
-        'unet_alpha': use_arg_list_or_expand_or_default(args.merge_unet_alpha, len(args.merge_alphas), None),
-        'text_encoder_alpha': use_arg_list_or_expand_or_default(args.merge_text_encoder_alpha, len(args.merge_alphas), None),
+        'algorithms': args.merge_algorithm,
+        'unet_alphas': args.merge_unet_alpha,
+        'text_encoder_alphas': args.merge_text_encoder_alpha,
+        'block_weights': args.merge_unet_block_weights,
+        'save_merge_path_prefix': args.save_merge_path_prefix,
+        'save_merge_half': not args.save_merge_float32,
     }
+    if all(v is None for v in merge_config.values()):
+        merge_config = None
 
     render_all(prompts=prompts,
                negative_prompts=negative_prompts,
