@@ -63,53 +63,94 @@ Run `python3 grate.py -h` for help:
 
 ```commandline
 $ grate -h
-usage: grate [-h] --prompts PROMPTS [PROMPTS ...] --repo_ids_or_paths REPO_IDS_OR_PATHS [REPO_IDS_OR_PATHS ...] --output_path OUTPUT_PATH [--device DEVICE]
-             [--batch_size BATCH_SIZE] [--width WIDTH] [--height HEIGHT] [--negative_prompts NEGATIVE_PROMPTS [NEGATIVE_PROMPTS ...]] [--seeds SEEDS [SEEDS ...]]
-             [--cfg CFG] [--local_files_only] [--merge_alphas MERGE_ALPHAS [MERGE_ALPHAS ...]] [--merge_algorithm MERGE_ALGORITHM [MERGE_ALGORITHM ...]]
-             [--merge_unet_block_weights MERGE_UNET_BLOCK_WEIGHTS [MERGE_UNET_BLOCK_WEIGHTS ...]] [--merge_unet_alpha MERGE_UNET_ALPHA [MERGE_UNET_ALPHA ...]]
+usage: grate [-h] --prompts PROMPTS [PROMPTS ...] --repo_ids_or_paths
+             REPO_IDS_OR_PATHS [REPO_IDS_OR_PATHS ...] --output_path
+             OUTPUT_PATH [--device DEVICE] [--batch_size BATCH_SIZE]
+             [--width WIDTH] [--height HEIGHT]
+             [--negative_prompts NEGATIVE_PROMPTS [NEGATIVE_PROMPTS ...]]
+             [--seeds SEEDS [SEEDS ...]] [--cfg CFG] [--steps STEPS]
+             [--disable_nsfw_checker] [--local_files_only]
+             [--merge_alpha MERGE_ALPHA [MERGE_ALPHA ...]]
+             [--merge_algorithm MERGE_ALGORITHM [MERGE_ALGORITHM ...]]
+             [--merge_unet_block_weights MERGE_UNET_BLOCK_WEIGHTS [MERGE_UNET_BLOCK_WEIGHTS ...]]
+             [--merge_unet_alpha MERGE_UNET_ALPHA [MERGE_UNET_ALPHA ...]]
              [--merge_text_encoder_alpha MERGE_TEXT_ENCODER_ALPHA [MERGE_TEXT_ENCODER_ALPHA ...]]
+             [--save_merge_path_prefix SAVE_MERGE_PATH_PREFIX]
+             [--save_merge_float32]
 
-Generates a grid of images by running a set of prompts through different Stable Diffusion models.
-
-Optionally, merge models together: if one of the --merge_ options is passed, grate will produce multiple merged models using all possible combinations of the passed values, and render each on its own row in the output image. For example, 
-    grate --merge_alphas 0.333 0.667 --merge_algorithm weighted_sum sigmoid
-will produce an output image with 4 rows, representing a weighted_sum merge with alpha 0.333, a weighted_sum merge with alpha 0.667, a sigmoid merge with alpha 0.333, and a sigmoid merge with alpha 0.667, respectively. When merging, you must specify either 2 or 3 values for --repo_ids_or_paths .
+Generates a grid of images by running a set of prompts through different
+Stable Diffusion models. Optionally, merge models together: if one or more of
+the --merge_ options is passed, grate will produce multiple merged models
+using all possible combinations of the passed values, and render each on its
+own row in the output image. For example, grate --merge_alphas 0.333 0.667
+--merge_algorithm weighted_sum sigmoid will produce an output image with 4
+rows, representing a weighted_sum merge with alpha 0.333, a weighted_sum merge
+with alpha 0.667, a sigmoid merge with alpha 0.333, and a sigmoid merge with
+alpha 0.667, respectively. When merging, you must specify either 2 or 3 values
+for --repo_ids_or_paths .
 
 options:
   -h, --help            show this help message and exit
   --prompts PROMPTS [PROMPTS ...]
-                        EITHER: a path to a JSON file containing prompt and negative prompt pairs eg [{'prompt': 'a fish', 'negative_prompt': 'distorted', 'seed':
-                        123}, ...]. OR: multiple strings enclosed in "" and separated by spaces. eg --prompts "a cat" "a dog" "a fish"
+                        EITHER: a path to a JSON file containing prompts with
+                        optional seeds and negative prompts, eg [{'prompt': 'a
+                        fish', 'negative_prompt': 'distorted', 'seed': 123},
+                        ...]. OR: multiple strings enclosed in "" and
+                        separated by spaces. eg --prompts "a cat" "a dog" "a
+                        fish"
   --repo_ids_or_paths REPO_IDS_OR_PATHS [REPO_IDS_OR_PATHS ...]
-                        repository ids or paths to models in diffusers or ckpt format, as strings enclosed in "" and separated by spaces. eg --repo_ids_or_paths
-                        "stablityai/stable-diffusion-2-1" "../models/v1-5-pruned-emaonly.ckpt"
+                        repository ids or paths to models in diffusers or ckpt
+                        format, as strings enclosed in "" and separated by
+                        spaces. eg --repo_ids_or_paths "stablityai/stable-
+                        diffusion-2-1" "../models/v1-5-pruned-emaonly.ckpt"
   --output_path OUTPUT_PATH
-                        Where to save the resulting image. Also saves partial images here as each row is finished rendering.
-  --device DEVICE       (Optional) Device to use, eg 'cuda', 'mps', 'cpu'. if omitted, will try to pick the best device.
+                        Where to save the resulting image. Also saves
+                        partially-rendered images to this location as each row
+                        finishes rendering.
+  --device DEVICE       (Optional) Device to use, eg 'cuda', 'mps', 'cpu'. if
+                        omitted, will try to pick the best device.
   --batch_size BATCH_SIZE
-                        (Optional) Batch size, default 1
-  --width WIDTH         (Optional) Individual image width
-  --height HEIGHT       (Optional) Individual image height
+                        (Optional, default=1) Batch size.
+  --width WIDTH         (Optional, default=512) Individual image width
+  --height HEIGHT       (Optional, defatul=512) Individual image height
   --negative_prompts NEGATIVE_PROMPTS [NEGATIVE_PROMPTS ...]
-                        (Optional) Negative prompts. Must be either 1 string to use for all prompts, or one string for each prompt passed to --prompts.
+                        (Optional) Negative prompts. Specify either one string
+                        to share for all `--prompts`, or as many strings as
+                        there are `--prompts`.
   --seeds SEEDS [SEEDS ...]
-                        (Optional) Seeds. Must be either 1 int to use for all prompts, or exactly 1 int per prompt.
-  --cfg CFG             (Optional) CFG scale (default=7.5).
-  --local_files_only    (Optional) Use only local data (do not attempt to download or update models)
-  --merge_alphas MERGE_ALPHAS [MERGE_ALPHAS ...]
-                        (Optional) If set, --repo_ids_or_paths must specify either 2 or 3 models, which will be merged using the given alphas and used in place of
-                        multiple models.
+                        (Optional) Seeds. Specify either one seed to share for
+                        all `--prompts`, or as many seeds as there are
+                        `--prompts`.
+  --cfg CFG             (Optional, default=7.5) CFG scale.
+  --steps STEPS         (Optional, default=15) How many inference steps to run
+  --disable_nsfw_checker
+                        (Optional)
+  --local_files_only    (Optional) Use only local data (do not attempt to
+                        download or update models)
+  --merge_alpha MERGE_ALPHA [MERGE_ALPHA ...]
+                        (Optional) If set, --repo_ids_or_paths must specify
+                        either 2 or 3 models, which will be merged using the
+                        given alpha and used in place of multiple models.
   --merge_algorithm MERGE_ALGORITHM [MERGE_ALGORITHM ...]
-                        (Optional, default is weighted_sum) If doing merges, the algorithm to use - one of 'weighted_sum', 'sigmoid', 'inv_sigmoid', or 'add_diff'. 'add_diff' only works for
-                        3-way merge.
+                        (Optional) If doing merges, the algorithm to use - one
+                        of 'weighted_sum', 'sigmoid', 'inv_sigmoid', or
+                        'add_diff'. 'add_diff' only works for 3-way merge.
   --merge_unet_block_weights MERGE_UNET_BLOCK_WEIGHTS [MERGE_UNET_BLOCK_WEIGHTS ...]
-                        (Optional) 25 comma-separated floats specified as strings, eg "0.0, 0.0, 0.0, (... 22 more floats)", to merge each part of the UNet using a
-                        different weight ('block-weighted merging').
+                        (Optional) 25 comma-separated floats specified as
+                        strings, eg "0.0, 0.0, 0.0, (... 22 more floats)", to
+                        merge each part of the UNet using a different weight
+                        ('block-weighted merging').
   --merge_unet_alpha MERGE_UNET_ALPHA [MERGE_UNET_ALPHA ...]
-                        (Optional) Override the merge alpha with a unet-specific alpha.
+                        (Optional) Override the merge alpha with a unet-
+                        specific alpha.
   --merge_text_encoder_alpha MERGE_TEXT_ENCODER_ALPHA [MERGE_TEXT_ENCODER_ALPHA ...]
-                        (Optional) Override the merge alpha with a text-encoder-specific alpha. 
-
+                        (Optional) Override the merge alpha with a text-
+                        encoder-specific alpha.
+  --save_merge_path_prefix SAVE_MERGE_PATH_PREFIX
+                        (Optional) If doing a merge, save all merge
+                        combinations using this path as a prefix.
+  --save_merge_float32  (Optional) If saving merges, save with float32
+                        precision (default is float16).
 ```
 
 Enjoy!
