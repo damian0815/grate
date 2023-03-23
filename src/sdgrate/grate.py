@@ -395,14 +395,24 @@ def render_all(prompts: list[str], negative_prompts: Optional[list[str]], seeds:
 def main():
     parser = argparse.ArgumentParser(
         prog="grate",
-        description="Generates a grid of images by running a set of prompts through different Stable Diffusion models.",
+        description="Generates a grid of images by running a set of prompts through different Stable Diffusion models.\n"
+                    "\n"
+                    "Optionally, merge models together: if one or more of the --merge_ options is passed, grate will produce "
+                    "multiple merged models using all possible combinations of the passed values, and render each on its "
+                    "own row in the output image. For example, \n"
+                    "    grate --merge_alphas 0.333 0.667 --merge_algorithm weighted_sum sigmoid\n"
+                    "will produce an output image with 4 rows, representing a weighted_sum merge with alpha 0.333, a "
+                    "weighted_sum merge with alpha 0.667, a sigmoid merge with alpha 0.333, and a sigmoid merge with "
+                    "alpha 0.667, respectively. \n"
+                    "\n"
+                    "When merging, you must specify either 2 or 3 values for --repo_ids_or_paths ."
     )
 
     parser.add_argument("--prompts",
                         nargs='+',
                         required=True,
                         help=(
-                                    "EITHER: a path to a JSON file containing prompt and negative prompt pairs eg [{'prompt': 'a fish', 'negative_prompt': 'distorted', 'seed': 123}, ...]. \n\n" +
+                                    "EITHER: a path to a JSON file containing prompts with optional seeds and negative prompts, eg [{'prompt': 'a fish', 'negative_prompt': 'distorted', 'seed': 123}, ...]. \n\n" +
                                     "OR: multiple strings enclosed in \"\" and separated by spaces. eg --prompts \"a cat\" \"a dog\" \"a fish\"")
                         )
     parser.add_argument("--repo_ids_or_paths",
