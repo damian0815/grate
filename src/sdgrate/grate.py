@@ -528,11 +528,13 @@ def main():
         'unet_alphas': args.merge_unet_alpha,
         'text_encoder_alphas': args.merge_text_encoder_alpha,
         'block_weights': args.merge_unet_block_weights,
-        'save_merge_path_prefix': args.save_merge_path_prefix,
-        'save_merge_half': not args.save_merge_float32,
     }
     if all(v is None for v in merge_config.values()):
         merge_config = None
+    else:
+        merge_config['save_merge_path_prefix'] = args.save_merge_path_prefix
+        merge_config['save_merge_half'] = not args.save_merge_float32
+
 
     render_all(prompts=prompts,
                negative_prompts=negative_prompts,
