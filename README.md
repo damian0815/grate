@@ -71,6 +71,10 @@ usage: grate [-h] --prompts PROMPTS [PROMPTS ...] --repo_ids_or_paths REPO_IDS_O
 
 Generates a grid of images by running a set of prompts through different Stable Diffusion models.
 
+Optionally, merge models together: if one of the --merge_ options is passed, grate will produce multiple merged models using all possible combinations of the passed values, and render each on its own row in the output image. For example, 
+    grate --merge_alphas 0.333 0.667 --merge_algorithm weighted_sum sigmoid
+will produce an output image with 4 rows, representing a weighted_sum merge with alpha 0.333, a weighted_sum merge with alpha 0.667, a sigmoid merge with alpha 0.333, and a sigmoid merge with alpha 0.667, respectively. When merging, you must specify either 2 or 3 values for --repo_ids_or_paths .
+
 options:
   -h, --help            show this help message and exit
   --prompts PROMPTS [PROMPTS ...]
@@ -97,17 +101,14 @@ options:
                         multiple models.
   --merge_algorithm MERGE_ALGORITHM [MERGE_ALGORITHM ...]
                         (Optional, default is weighted_sum) If doing merges, the algorithm to use - one of 'weighted_sum', 'sigmoid', 'inv_sigmoid', or 'add_diff'. 'add_diff' only works for
-                        3-way merge. Specify either 1 algorithm to use for all rows, or the same number of algorithms as there are merge_alphas.
+                        3-way merge.
   --merge_unet_block_weights MERGE_UNET_BLOCK_WEIGHTS [MERGE_UNET_BLOCK_WEIGHTS ...]
                         (Optional) 25 comma-separated floats specified as strings, eg "0.0, 0.0, 0.0, (... 22 more floats)", to merge each part of the UNet using a
-                        different weight ('block-weighted merging'). Specify either 1 list to use for all rows, or the same number of lists as there are
-                        merge_alphas.
+                        different weight ('block-weighted merging').
   --merge_unet_alpha MERGE_UNET_ALPHA [MERGE_UNET_ALPHA ...]
-                        (Optional) Override the merge alpha with a unet-specific alpha. Specify either 1 alpha to use for all rows, or the same number of alphas as
-                        there are merge_alphas.
+                        (Optional) Override the merge alpha with a unet-specific alpha.
   --merge_text_encoder_alpha MERGE_TEXT_ENCODER_ALPHA [MERGE_TEXT_ENCODER_ALPHA ...]
-                        (Optional) Override the merge alpha with a text-encoder-specific alpha. Specify either 1 alpha to use for all rows, or the same number of
-                        alphas as there are merge_alphas.
+                        (Optional) Override the merge alpha with a text-encoder-specific alpha. 
 
 ```
 
