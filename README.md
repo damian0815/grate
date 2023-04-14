@@ -76,7 +76,7 @@ usage: grate [-h] --prompts PROMPTS [PROMPTS ...] --repo_ids_or_paths
              [--merge_unet_alpha MERGE_UNET_ALPHA [MERGE_UNET_ALPHA ...]]
              [--merge_text_encoder_alpha MERGE_TEXT_ENCODER_ALPHA [MERGE_TEXT_ENCODER_ALPHA ...]]
              [--save_merge_path_prefix SAVE_MERGE_PATH_PREFIX]
-             [--save_merge_float32]
+             [--save_merge_float32] [--use_penultimate_clip_layer]
 
 Generates a grid of images by running a set of prompts through different
 Stable Diffusion models. Optionally, merge models together: if one or more of
@@ -151,6 +151,10 @@ options:
                         combinations using this path as a prefix.
   --save_merge_float32  (Optional) If saving merges, save with float32
                         precision (default is float16).
+  --use_penultimate_clip_layer
+                        (Optional) Use the outputs from penultimate (second to
+                        last) CLIP hidden layer.
+
 ```
 
 Enjoy!
@@ -160,3 +164,7 @@ Enjoy!
 The main `sdgrate.grate` module includes the following functions, which may be useful: `merge_models`, `render_row`, `render_all`. 
 
 The model merger is implemented as a custom pipeline based on a modified version of the (checkpoint_merger pipeline)
+
+## Changelog
+
+#### 0.2.2 - added `--use_penultimate_clip_layer` arg for improved SD2 generation quality (aka "clip skip")
