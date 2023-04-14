@@ -6,6 +6,7 @@ import pathlib
 from typing import Optional
 
 import torch
+from compel import Compel
 from diffusers.pipelines.stable_diffusion.convert_from_ckpt import load_pipeline_from_original_stable_diffusion_ckpt
 from diffusers import StableDiffusionPipeline, DPMSolverMultistepScheduler
 from PIL import Image, ImageDraw, ImageFont
@@ -181,6 +182,7 @@ def render_row(prompts: list[str],
                cfg=7.5,
                num_inference_steps=15,  # ddpm++ solver: 15 is typically enough
                disable_nsfw_checker: bool = False,
+               use_penultimate_clip_layer: bool = False
                ) -> list[Image]:
     # ddpm++
     pipeline.scheduler = DPMSolverMultistepScheduler.from_config(pipeline.scheduler.config,
@@ -199,11 +201,15 @@ def render_row(prompts: list[str],
     negative_prompts = negative_prompts or [""] * len(prompts)
     batches = chunk_list(list(zip(prompts, negative_prompts, seeds)), batch_size)
     progress_bar = tqdm(list(batches))
+    compel = Compel(tokenizer=pipeline.tokenizer,
+                    text_encoder=pipeline.text_encoder,
+                    use_penultimate_clip_layer=use_penultimate_clip_layer)
     for batch in progress_bar:
         batch_prompts, batch_negative_prompts, batch_seeds = zip(*batch)
         print(f" - {batch_prompts}")
         generator_device = 'cpu' if device == 'mps' else device
         manual_seed_generators = [torch.Generator(generator_device).manual_seed(seed) for seed in batch_seeds]
+        positive_embeds = compel(batch_prompts)
         pipeline_output: StableDiffusionPipelineOutput = pipeline(prompt=list(batch_prompts),
                                                                   negative_prompt=list(batch_negative_prompts),
                                                                   generator=manual_seed_generators,
@@ -303,6 +309,7 @@ def render_all(prompts: list[str], negative_prompts: Optional[list[str]], seeds:
                local_files_only: bool = False,
                merge_config: Optional[dict] = None,
                disable_nsfw_checker: bool = False,
+               use_penultimate_clip_layer: bool = False,
                ) -> Image:
     all_images = []
     print(f"{len(prompts)} prompts")
@@ -354,7 +361,8 @@ def render_all(prompts: list[str], negative_prompts: Optional[list[str]], seeds:
                                     cfg=cfg,
                                     num_inference_steps=inference_steps,
                                     sample_w=size[0], sample_h=size[1],
-                                    disable_nsfw_checker=disable_nsfw_checker,)
+                                    disable_nsfw_checker=disable_nsfw_checker,
+                                    use_penultimate_clip_layer=use_penultimate_clip_layer)
             all_images += row_images
             save_partial_if_requested()
 
@@ -383,7 +391,8 @@ def render_all(prompts: list[str], negative_prompts: Optional[list[str]], seeds:
                                     cfg=cfg,
                                     num_inference_steps=inference_steps,
                                     sample_w=size[0], sample_h=size[1],
-                                    disable_nsfw_checker=disable_nsfw_checker,)
+                                    disable_nsfw_checker=disable_nsfw_checker,
+                                    use_penultimate_clip_layer=use_penultimate_clip_layer)
             all_images += row_images
             save_partial_if_requested()
             del pipeline
@@ -504,6 +513,9 @@ def main():
     parser.add_argument("--save_merge_float32",
                         action="store_true",
                         help="(Optional) If saving merges, save with float32 precision (default is float16).")
+    parser.add_argument("--use_penultimate_clip_layer",
+                        action="store_true",
+                        help="(Optional) Use the outputs from penultimate (second to last) CLIP hidden layer.")
     args = parser.parse_args()
 
 
@@ -558,7 +570,8 @@ def main():
                inference_steps=args.steps,
                local_files_only=args.local_files_only,
                save_partial_filename=args.output_path,
-               disable_nsfw_checker=args.disable_nsfw_checker,)
+               disable_nsfw_checker=args.disable_nsfw_checker,
+               use_penultimate_clip_layer=args.use_penultimate_clip_layer)
     print(f"grate saved to {args.output_path}")
 
 if __name__ == '__main__':
