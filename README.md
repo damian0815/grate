@@ -167,4 +167,6 @@ The model merger is implemented as a custom pipeline based on a modified version
 
 ## Changelog
 
+#### 0.2.3 - fix crash when running compel, fix diffusers 0.15 support actually
+
 #### 0.2.2 - added `--use_penultimate_clip_layer` arg for improved SD2 generation quality (aka "clip skip")

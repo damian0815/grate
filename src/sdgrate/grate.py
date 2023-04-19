@@ -7,7 +7,6 @@ from typing import Optional
 
 import torch
 from compel import Compel
-from diffusers.pipelines.stable_diffusion.convert_from_ckpt import load_pipeline_from_original_stable_diffusion_ckpt
 from diffusers import StableDiffusionPipeline, DPMSolverMultistepScheduler
 from PIL import Image, ImageDraw, ImageFont
 from diffusers.pipelines.stable_diffusion import StableDiffusionPipelineOutput
@@ -157,6 +156,9 @@ def load_model(repo_id_or_path, prefer_fp16: bool = True, local_files_only: bool
         yaml_file = (os.path.splitext(repo_id_or_path)[0] + ".yaml")
         if not os.path.exists(yaml_file):
             yaml_file = None
+        # this won't work on diffusers 0.15+, need to find a way to reliably support old + new
+        from diffusers.pipelines.stable_diffusion.convert_from_ckpt import \
+                load_pipeline_from_original_stable_diffusion_ckpt
         return load_pipeline_from_original_stable_diffusion_ckpt(repo_id_or_path, original_config_file=yaml_file)
     elif os.path.isdir(repo_id_or_path):
         return StableDiffusionPipeline.from_pretrained(repo_id_or_path)
@@ -209,7 +211,6 @@ def render_row(prompts: list[str],
         print(f" - {batch_prompts}")
         generator_device = 'cpu' if device == 'mps' else device
         manual_seed_generators = [torch.Generator(generator_device).manual_seed(seed) for seed in batch_seeds]
-        positive_embeds = compel(batch_prompts)
         pipeline_output: StableDiffusionPipelineOutput = pipeline(prompt=list(batch_prompts),
                                                                   negative_prompt=list(batch_negative_prompts),
                                                                   generator=manual_seed_generators,
@@ -309,7 +310,7 @@ def render_all(prompts: list[str], negative_prompts: Optional[list[str]], seeds:
                local_files_only: bool = False,
                merge_config: Optional[dict] = None,
                disable_nsfw_checker: bool = False,
-               use_penultimate_clip_layer: bool = False,
+               use_penultimate_clip_layer: Optional[bool] = False, # autodetect if None
                ) -> Image:
     all_images = []
     print(f"{len(prompts)} prompts")
@@ -515,7 +516,7 @@ def main():
                         help="(Optional) If saving merges, save with float32 precision (default is float16).")
     parser.add_argument("--use_penultimate_clip_layer",
                         action="store_true",
-                        help="(Optional) Use the outputs from penultimate (second to last) CLIP hidden layer.")
+                        help="(Optional) Use the outputs from penultimate (second to last) CLIP hidden layer. On detected SD2.x models this defaults on, otherwise it defaults off.")
     args = parser.parse_args()
 
 
