@@ -62,14 +62,16 @@ Note that the number of values passed to `--merge_alphas` matches the number of 
 Run `python3 grate.py -h` for help:
 
 ```commandline
-$ grate -h
+$ grate -h 
 usage: grate [-h] --prompts PROMPTS [PROMPTS ...] --repo_ids_or_paths
              REPO_IDS_OR_PATHS [REPO_IDS_OR_PATHS ...] --output_path
              OUTPUT_PATH [--device DEVICE] [--batch_size BATCH_SIZE]
              [--width WIDTH] [--height HEIGHT]
              [--negative_prompts NEGATIVE_PROMPTS [NEGATIVE_PROMPTS ...]]
-             [--seeds SEEDS [SEEDS ...]] [--cfg CFG] [--steps STEPS]
-             [--disable_nsfw_checker] [--local_files_only]
+             [--seeds SEEDS [SEEDS ...]]
+             [--scheduler {ddim,lms,dpm++,k_dpm++,dpm++_sde,k_dpm++_sde,euler_a,k_euler_a,pndm,ddpm,k_dpm2_a}]
+             [--cfg CFG] [--steps STEPS] [--disable_nsfw_checker]
+             [--local_files_only]
              [--merge_alpha MERGE_ALPHA [MERGE_ALPHA ...]]
              [--merge_algorithm MERGE_ALGORITHM [MERGE_ALGORITHM ...]]
              [--merge_unet_block_weights MERGE_UNET_BLOCK_WEIGHTS [MERGE_UNET_BLOCK_WEIGHTS ...]]
@@ -121,6 +123,8 @@ options:
                         (Optional) Seeds. Specify either one seed to share for
                         all `--prompts`, or as many seeds as there are
                         `--prompts`.
+  --scheduler {ddim,lms,dpm++,k_dpm++,dpm++_sde,k_dpm++_sde,euler_a,k_euler_a,pndm,ddpm,k_dpm2_a}
+                        (Optional, default=dpm++) Scheduler to use.
   --cfg CFG             (Optional, default=7.5) CFG scale.
   --steps STEPS         (Optional, default=15) How many inference steps to run
   --disable_nsfw_checker
@@ -153,8 +157,8 @@ options:
                         precision (default is float16).
   --use_penultimate_clip_layer
                         (Optional) Use the outputs from penultimate (second to
-                        last) CLIP hidden layer.
-
+                        last) CLIP hidden layer. On detected SD2.x models this
+                        defaults on, otherwise it defaults off.
 ```
 
 Enjoy!
@@ -166,6 +170,8 @@ The main `sdgrate.grate` module includes the following functions, which may be u
 The model merger is implemented as a custom pipeline based on a modified version of the (checkpoint_merger pipeline)
 
 ## Changelog
+
+#### 0.2.4 - add `--scheduler` arg and fix diffusers 0.16 support 
 
 #### 0.2.3 - fix crash when running compel, fix diffusers 0.15 support actually
 
