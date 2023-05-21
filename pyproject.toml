@@ -19,7 +19,7 @@ dependencies = [
     "Pillow",
     "tqdm",
     "transformers",
-    "safetensors"
+    "scipy"
 ]
 
 [project.urls]

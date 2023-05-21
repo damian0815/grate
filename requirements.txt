@@ -1,4 +1,5 @@
 diffusers[torch]
 huggingface-hub
 Pillow
+scipy
 tqdm

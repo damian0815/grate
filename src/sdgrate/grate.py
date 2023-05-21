@@ -7,7 +7,8 @@ from typing import Optional
 
 import torch
 from compel import Compel
-from diffusers import StableDiffusionPipeline, DPMSolverMultistepScheduler
+from diffusers import StableDiffusionPipeline, LMSDiscreteScheduler, DPMSolverMultistepScheduler, \
+    EulerAncestralDiscreteScheduler, PNDMScheduler, DDPMScheduler, KDPM2AncestralDiscreteScheduler, DDIMScheduler
 from PIL import Image, ImageDraw, ImageFont
 from diffusers.pipelines.stable_diffusion import StableDiffusionPipelineOutput
 from diffusers.utils import is_xformers_available
@@ -172,31 +173,57 @@ def load_model(repo_id_or_path, prefer_fp16: bool = True, local_files_only: bool
         return StableDiffusionPipeline.from_pretrained(repo_id_or_path, revision=revision,
                                                        local_files_only=local_files_only)
 
+def make_scheduler(which: str, config):
+
+    if which == 'ddim':
+        return DDIMScheduler.from_config(config)
+    elif which == "lms":
+        return LMSDiscreteScheduler.from_config(config)
+    elif which == "dpm++":
+        return DPMSolverMultistepScheduler.from_config(config, algorithm_type="dpmsolver++", use_karras_sigmas=False)
+    elif which == "k_dpm++":
+        return DPMSolverMultistepScheduler.from_config(config, algorithm_type="dpmsolver++", use_karras_sigmas=True)
+    elif which == "dpm++_sde":
+        return DPMSolverMultistepScheduler.from_config(config, algorithm_type="sde-dpmsolver++",
+                                                       use_karras_sigmas=False)
+    elif which == "k_dpm++_sde":
+        return DPMSolverMultistepScheduler.from_config(config, algorithm_type="sde-dpmsolver++",
+                                                       use_karras_sigmas=True)
+    elif which == "euler_a":
+        return EulerAncestralDiscreteScheduler.from_config(config, use_karras_sigmas=False)
+    elif which == "k_euler_a":
+        return EulerAncestralDiscreteScheduler.from_config(config, use_karras_sigmas=True)
+    elif which == 'pndm':
+        return PNDMScheduler.from_config(config)
+    elif which == 'ddpm':
+        return DDPMScheduler.from_config(config)
+    elif which == 'k_dpm2_a':
+        return KDPM2AncestralDiscreteScheduler.from_config(config)
+    else:
+        raise ValueError(f"Unrecognized scheduler {which}")
+
 
 def render_row(prompts: list[str],
                negative_prompts: Optional[list[str]],
                seeds: list[int],
                pipeline: StableDiffusionPipeline,
+               scheduler_name: str="dpm++",
                device: str = None,
                batch_size=1,
                sample_w=512,
                sample_h=512,
                cfg=7.5,
-               num_inference_steps=15,  # ddpm++ solver: 15 is typically enough
+               num_inference_steps=15, # for dpm++ solver, 15 is typically enough
                disable_nsfw_checker: bool = False,
                use_penultimate_clip_layer: bool = False
                ) -> list[Image]:
-    # ddpm++
-    pipeline.scheduler = DPMSolverMultistepScheduler.from_config(pipeline.scheduler.config,
-                                                                 algorithm_type="dpmsolver++")
+    pipeline.scheduler = make_scheduler(which=scheduler_name, config=pipeline.scheduler.config)
     if device is None:
         device = 'cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu'
-    if device == 'cuda':
-        # noinspection PyTypeChecker
-        pipeline = pipeline.to(torch.float16)
-        if is_xformers_available():
-            pipeline.enable_xformers_memory_efficient_attention()
-    pipeline = pipeline.to(device)
+    # noinspection PyTypeChecker
+    pipeline = pipeline.to(device, torch.float16)
+    if is_xformers_available():
+        pipeline.enable_xformers_memory_efficient_attention()
     if disable_nsfw_checker:
         pipeline.safety_checker = disable_nsfw_safety_checker
     images = []
@@ -302,6 +329,7 @@ def explode_merge_config(merge_config: dict) -> list[dict]:
 
 def render_all(prompts: list[str], negative_prompts: Optional[list[str]], seeds: list[int], cfg: float,
                repo_ids_or_paths: list[str],
+               scheduler: str,
                device: str,
                size: tuple[int, int],
                batch_size: int,
@@ -357,6 +385,7 @@ def render_all(prompts: list[str], negative_prompts: Optional[list[str]], seeds:
                                     negative_prompts=negative_prompts,
                                     seeds=seeds,
                                     pipeline=pipeline,
+                                    scheduler_name=scheduler,
                                     device=device,
                                     batch_size=batch_size,
                                     cfg=cfg,
@@ -371,7 +400,7 @@ def render_all(prompts: list[str], negative_prompts: Optional[list[str]], seeds:
             if save_merge_path_prefix is not None:
                 save_half = merge_config.get('save_merge_half', True)
                 if save_half:
-                    pipeline.to(torch.float16)
+                    pipeline.to(pipeline.device, torch.float16)
                 save_merge_path = f"{save_merge_path_prefix}_{merge_index:02d}"
                 pipeline.save_pretrained(save_merge_path)
 
@@ -387,6 +416,7 @@ def render_all(prompts: list[str], negative_prompts: Optional[list[str]], seeds:
                                     negative_prompts=negative_prompts,
                                     seeds=seeds,
                                     pipeline=pipeline,
+                                    scheduler_name=scheduler,
                                     device=device,
                                     batch_size=batch_size,
                                     cfg=cfg,
@@ -463,6 +493,12 @@ def main():
                         type=int,
                         nargs="+",
                         help="(Optional) Seeds. Specify either one seed to share for all `--prompts`, or as many seeds as there are `--prompts`.")
+    parser.add_argument("--scheduler",
+                        choices=['ddim', "lms", "dpm++", "k_dpm++", "dpm++_sde", "k_dpm++_sde",
+                                 "euler_a", "k_euler_a", 'pndm', 'ddpm', 'k_dpm2_a'],
+                        default="dpm++",
+                        type=str,
+                        help="(Optional, default=dpm++) Scheduler to use.")
     parser.add_argument("--cfg",
                         required=False,
                         type=float,
@@ -561,6 +597,7 @@ def main():
 
     render_all(prompts=prompts,
                negative_prompts=negative_prompts,
+               scheduler=args.scheduler,
                seeds=seeds,
                repo_ids_or_paths=args.repo_ids_or_paths,
                merge_config=merge_config,
