@@ -59,9 +59,16 @@ def get_wrapped_text(text: str, font: ImageFont,
                     current_line = None
                 else:
                     # single word is too long, need to truncate
-                    truncated_word = next_word
-                    while len(truncated_word) > 0 and font.getlength(truncated_word) > line_width:
-                        truncated_word = truncated_word[:-1]
+                    lo=0
+                    hi=len(next_word)
+                    while lo<hi:
+                        cur = (lo+hi)//2
+                        truncated_word = next_word[:cur]
+                        if font.getlength(truncated_word) > line_width:
+                            hi = cur-1
+                        else:
+                            lo = cur+1
+                    truncated_word = next_word[:hi]
                     if len(truncated_word) > 0:
                         lines.append(truncated_word)
                         words.insert(0, next_word[len(truncated_word):])
@@ -238,8 +245,11 @@ def render_row(prompts: list[str],
         print(f" - {batch_prompts}")
         generator_device = 'cpu' if device == 'mps' else device
         manual_seed_generators = [torch.Generator(generator_device).manual_seed(seed) for seed in batch_seeds]
-        pipeline_output: StableDiffusionPipelineOutput = pipeline(prompt=list(batch_prompts),
-                                                                  negative_prompt=list(batch_negative_prompts),
+        embeds = compel(batch_prompts)
+        negative_embeds = compel(batch_negative_prompts)
+        [embeds, negative_embeds] = compel.pad_conditioning_tensors_to_same_length([embeds, negative_embeds])
+        pipeline_output: StableDiffusionPipelineOutput = pipeline(prompt_embeds=embeds,
+                                                                  negative_prompt_embeds=negative_embeds,
                                                                   generator=manual_seed_generators,
                                                                   width=sample_w,
                                                                   height=sample_h,
@@ -595,7 +605,7 @@ def main():
         merge_config['save_merge_half'] = not args.save_merge_float32
 
 
-    render_all(prompts=prompts,
+    output = render_all(prompts=prompts,
                negative_prompts=negative_prompts,
                scheduler=args.scheduler,
                seeds=seeds,
@@ -607,9 +617,10 @@ def main():
                cfg=args.cfg,
                inference_steps=args.steps,
                local_files_only=args.local_files_only,
-               save_partial_filename=args.output_path,
+               save_partial_filename=None,
                disable_nsfw_checker=args.disable_nsfw_checker,
                use_penultimate_clip_layer=args.use_penultimate_clip_layer)
+    output.save(args.output_path)
     print(f"grate saved to {args.output_path}")
 
 if __name__ == '__main__':
