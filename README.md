@@ -171,6 +171,8 @@ The model merger is implemented as a custom pipeline based on a modified version
 
 ## Changelog
 
+#### 0.2.5 - improve performance when splitting very long model names
+
 #### 0.2.4 - add `--scheduler` arg and fix diffusers 0.16 support 
 
 #### 0.2.3 - fix crash when running compel, fix diffusers 0.15 support actually

@@ -349,6 +349,7 @@ def render_all(prompts: list[str], negative_prompts: Optional[list[str]], seeds:
                merge_config: Optional[dict] = None,
                disable_nsfw_checker: bool = False,
                use_penultimate_clip_layer: Optional[bool] = False, # autodetect if None
+               notb: bool=False
                ) -> Image:
     all_images = []
     print(f"{len(prompts)} prompts")
@@ -422,6 +423,10 @@ def render_all(prompts: list[str], negative_prompts: Optional[list[str]], seeds:
         for repo_id_or_path in tqdm(repo_ids_or_paths):
             print(f"model {repo_id_or_path}:")
             pipeline = load_model(repo_id_or_path, local_files_only=local_files_only)
+            if notb:
+                scheduler_config = dict(pipeline.scheduler.config)
+                del scheduler_config['trained_betas']
+                pipeline.scheduler = type(pipeline.scheduler).from_config(scheduler_config)
             row_images = render_row(prompts,
                                     negative_prompts=negative_prompts,
                                     seeds=seeds,
@@ -563,6 +568,9 @@ def main():
     parser.add_argument("--use_penultimate_clip_layer",
                         action="store_true",
                         help="(Optional) Use the outputs from penultimate (second to last) CLIP hidden layer. On detected SD2.x models this defaults on, otherwise it defaults off.")
+    parser.add_argument("--notb",
+                        action="store_true",
+                        help="Ignore trained_betas in scheduler_config.json")
     args = parser.parse_args()
 
 
@@ -619,7 +627,8 @@ def main():
                local_files_only=args.local_files_only,
                save_partial_filename=None,
                disable_nsfw_checker=args.disable_nsfw_checker,
-               use_penultimate_clip_layer=args.use_penultimate_clip_layer)
+               use_penultimate_clip_layer=args.use_penultimate_clip_layer,
+               notb=args.notb)
     output.save(args.output_path)
     print(f"grate saved to {args.output_path}")
 
